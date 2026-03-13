@@ -1,0 +1,189 @@
+{
+  "holdings": [
+    {
+      "code": "002027",
+      "name": "分众传媒",
+      "cost": 7.152,
+      "qty": 13000,
+      "addedDate": "2026-03-12"
+    },
+    {
+      "code": "600489",
+      "name": "中金黄金",
+      "cost": 34.3727,
+      "qty": 2200,
+      "addedDate": "2026-03-12"
+    },
+    {
+      "code": "603444",
+      "name": "吉比特",
+      "cost": 423.615,
+      "qty": 100,
+      "addedDate": "2026-03-12"
+    },
+    {
+      "code": "000333",
+      "name": "美的集团",
+      "cost": 78.9125,
+      "qty": 400,
+      "addedDate": "2026-03-12"
+    },
+    {
+      "code": "002527",
+      "name": "新时达",
+      "cost": 14.912,
+      "qty": 2600,
+      "addedDate": "2026-03-13"
+    },
+    {
+      "code": "603501",
+      "name": "豪威集团",
+      "cost": 112.5081,
+      "qty": 300,
+      "addedDate": "2026-03-13"
+    }
+  ],
+  "recommendations": [
+    {
+      "code": "002171",
+      "name": "楚江新材",
+      "recPrice": 12.63,
+      "recDate": "2026-03-11",
+      "source": "AlphaSignal"
+    },
+    {
+      "code": "600388",
+      "name": "龙净环保",
+      "recPrice": 19.53,
+      "recDate": "2026-03-11",
+      "source": "AlphaSignal"
+    },
+    {
+      "code": "002768",
+      "name": "国恩股份",
+      "recPrice": 52.69,
+      "recDate": "2026-03-11",
+      "source": "AlphaSignal"
+    },
+    {
+      "code": "002215",
+      "name": "诺普信",
+      "recPrice": 10.86,
+      "recDate": "2026-03-12",
+      "source": "AlphaSignal"
+    },
+    {
+      "code": "002527",
+      "name": "新时达",
+      "recPrice": 0.0,
+      "recDate": "2026-03-13",
+      "source": "AlphaSignal"
+    },
+    {
+      "code": "603501",
+      "name": "韦尔股份",
+      "recPrice": 0.0,
+      "recDate": "2026-03-13",
+      "source": "AlphaSignal"
+    },
+    {
+      "code": "601899",
+      "name": "紫金矿业",
+      "recPrice": 0.0,
+      "recDate": "2026-03-13",
+      "source": "AlphaSignal"
+    }
+  ],
+  "history": [
+    {
+      "date": "2026-03-12",
+      "code": "002027",
+      "name": "分众传媒",
+      "close": 6.8,
+      "change": 0.0,
+      "high": 6.82,
+      "low": 6.73
+    },
+    {
+      "date": "2026-03-12",
+      "code": "002215",
+      "name": "诺普信",
+      "close": 10.86,
+      "change": -0.73,
+      "high": 11.02,
+      "low": 10.82
+    },
+    {
+      "date": "2026-03-12",
+      "code": "603444",
+      "name": "吉比特",
+      "close": 381.0,
+      "change": -2.05,
+      "high": 389.76,
+      "low": 379.23
+    },
+    {
+      "date": "2026-03-12",
+      "code": "002768",
+      "name": "国恩股份",
+      "close": 52.74,
+      "change": 0.13,
+      "high": 53.27,
+      "low": 52.15
+    },
+    {
+      "date": "2026-03-12",
+      "code": "002171",
+      "name": "楚江新材",
+      "close": 12.72,
+      "change": 0.87,
+      "high": 13.07,
+      "low": 12.57
+    },
+    {
+      "date": "2026-03-12",
+      "code": "000333",
+      "name": "美的集团",
+      "close": 77.4,
+      "change": 0.01,
+      "high": 77.75,
+      "low": 76.93
+    },
+    {
+      "date": "2026-03-12",
+      "code": "600388",
+      "name": "龙净环保",
+      "close": 19.55,
+      "change": -0.76,
+      "high": 20.24,
+      "low": 19.46
+    },
+    {
+      "date": "2026-03-12",
+      "code": "600428",
+      "name": "中远海特",
+      "close": 8.19,
+      "change": -0.85,
+      "high": 8.32,
+      "low": 8.09
+    },
+    {
+      "date": "2026-03-12",
+      "code": "300058",
+      "name": "蓝色光标",
+      "close": 15.66,
+      "change": -3.39,
+      "high": 16.3,
+      "low": 15.57
+    },
+    {
+      "date": "2026-03-12",
+      "code": "600489",
+      "name": "中金黄金",
+      "close": 31.34,
+      "change": -2.15,
+      "high": 32.08,
+      "low": 30.95
+    }
+  ]
+}
