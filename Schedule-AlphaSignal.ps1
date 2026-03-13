@@ -16,7 +16,7 @@ $outFile = Join-Path $desktop "$date-AlphaSignal.txt"
 $logFile = Join-Path $desktop "$date-AlphaSignal-error.log"
 
 try {
-    & ".\stock-news\Get-AlphaSignal.ps1" *> $outFile
+    & ".\Get-AlphaSignal.ps1" *> $outFile
     # 若输出为空则写提示
     if (-not (Test-Path $outFile) -or (Get-Item $outFile).Length -eq 0) {
         "[$date] AlphaSignal 输出为空，请检查网络或数据源" | Out-File $logFile -Encoding UTF8

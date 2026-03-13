@@ -16,7 +16,7 @@ $outFile = Join-Path $desktop "$date-美股强势.txt"
 $logFile = Join-Path $desktop "$date-美股强势-error.log"
 
 try {
-    & ".\stock-news\Get-USStrongAStocks.ps1" *> $outFile
+    & ".\Get-USStrongAStocks.ps1" *> $outFile
     if (-not (Test-Path $outFile) -or (Get-Item $outFile).Length -eq 0) {
         "[$date] USReport 输出为空，请检查网络或数据源" | Out-File $logFile -Encoding UTF8
     }

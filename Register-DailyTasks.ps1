@@ -14,13 +14,13 @@ $tasks = @(
         Name      = "MyClaw_USReport_0500"
         TimeUTC   = "21:00"   # 05:00 CST = 21:00 UTC
         TimeLabel = "05:00"
-        Script    = "Q:\MyClaw\stock-news\Schedule-USReport.ps1"
+        Script    = "Q:\stock-news\Schedule-USReport.ps1"
     },
     @{
         Name      = "MyClaw_AlphaSignal_0900"
         TimeUTC   = "01:00"   # 09:00 CST = 01:00 UTC
         TimeLabel = "09:00"
-        Script    = "Q:\MyClaw\stock-news\Schedule-AlphaSignal.ps1"
+        Script    = "Q:\stock-news\Schedule-AlphaSignal.ps1"
     }
 )
 

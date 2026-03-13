@@ -13,7 +13,7 @@ $OutputEncoding           = $utf8NoBom
 $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
 
 $pyCandidates = @(
-    'C:\Dev\MyClaw\.venv\Scripts\python.exe',
+    'C:\Users\hongyangwan\AppData\Local\Programs\Python\Python313\python.exe',
     'python'
 )
 

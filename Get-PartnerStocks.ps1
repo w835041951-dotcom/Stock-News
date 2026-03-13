@@ -17,8 +17,8 @@
 .PARAMETER Quiet
     静默模式，返回对象
 .EXAMPLE
-    .\stock-news\Get-PartnerStocks.ps1 -Target NVDA
-    .\stock-news\Get-PartnerStocks.ps1 -Target 英伟达 -TopN 15 -Days 90
+    .\Get-PartnerStocks.ps1 -Target NVDA
+    .\Get-PartnerStocks.ps1 -Target 英伟达 -TopN 15 -Days 90
 #>
 param(
     [Parameter(Mandatory = $true)]
@@ -44,7 +44,6 @@ $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
 
 function Resolve-Python {
     $candidates = @(
-        'C:\Dev\MyClaw\.venv\Scripts\python.exe',
         'C:\Users\hongyangwan\AppData\Local\Programs\Python\Python313\python.exe',
         'python'
     )
