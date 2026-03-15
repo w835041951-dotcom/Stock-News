@@ -406,7 +406,7 @@ Write-Host "动作: $($timing.Action)  置信度: $($timing.Confidence)"
 | `-Name` | string | 股票名称 |
 | `-Cost` | double | 持仓成本价（元/股） |
 | `-Qty` | int | 持股数量（股） |
-| `-PartnerStock` | string | 持仓关联股票信息，支持 `编号,名称,关联;编号,名称,关联` 或 JSON |
+| `-PartnerStock` | string | 持仓/推荐关联股票信息，支持 `编号,名称,关联;编号,名称,关联` 或 JSON |
 | `-RecPrice` | double | 推荐时价格 |
 | `-Source` | string | 推荐来源标注（如 `AlphaSignal`） |
 | `-Days` | int | history 模式下回溯天数，默认 7 |
@@ -430,6 +430,9 @@ Write-Host "动作: $($timing.Action)  置信度: $($timing.Confidence)"
 
 # 添加观察推荐股（从 AlphaSignal 推荐）
 .\Get-Watchlist.ps1 -Action add -Type rec -Code 600519 -Name 贵州茅台 -RecPrice 1500 -Source AlphaSignal
+
+# 添加/更新推荐并写入关联股票信息
+.\Get-Watchlist.ps1 -Action add -Type rec -Code 600519 -PartnerStock "000858,五粮液,白酒同业;000568,泸州老窖,白酒同业"
 
 # 删除一只股票
 .\Get-Watchlist.ps1 -Action remove -Code 000001

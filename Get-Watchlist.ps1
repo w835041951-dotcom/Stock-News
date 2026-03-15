@@ -114,6 +114,14 @@ function Normalize-PartnerStocks {
     }
 
     foreach ($item in @($Value)) {
+        if (($item -is [System.Collections.IEnumerable]) -and -not ($item -is [string])) {
+            $hasPartnerFields = ($item.PSObject.Properties.Name -contains 'code') -or ($item.PSObject.Properties.Name -contains 'name') -or ($item.PSObject.Properties.Name -contains 'relation')
+            if (-not $hasPartnerFields) {
+                $normalized += @(Normalize-PartnerStocks -Value $item)
+                continue
+            }
+        }
+
         if ($item -is [string]) {
             $name = $item.Trim()
             if ($name) { $normalized += [PSCustomObject]@{ code = ""; name = $name; relation = "" } }
@@ -129,6 +137,47 @@ function Normalize-PartnerStocks {
     }
 
     return $normalized
+}
+
+function Clean-PartnerStocks {
+    param($PartnerStocks)
+
+    $noisePatterns = @(
+        '目前未在公开信息',
+        '有关公司信息',
+        '公司关于',
+        '等信息'
+    )
+
+    $rows = Normalize-PartnerStocks -Value $PartnerStocks
+    $cleaned = @()
+    $seen = @{}
+
+    foreach ($r in $rows) {
+        $code = if ($r.code) { "$($r.code)".Trim() } else { "" }
+        $name = if ($r.name) { "$($r.name)".Trim() } else { "" }
+        $rel  = if ($r.relation) { "$($r.relation)".Trim() } else { "" }
+
+        if (-not $code -and -not $name) { continue }
+
+        $isNoise = $false
+        foreach ($p in $noisePatterns) {
+            if ($name -like "*$p*") { $isNoise = $true; break }
+        }
+        if ($isNoise) { continue }
+
+        $key = ("$code|$name").ToLowerInvariant()
+        if ($seen.ContainsKey($key)) { continue }
+        $seen[$key] = $true
+
+        $cleaned += [PSCustomObject]@{
+            code = $code
+            name = $name
+            relation = $rel
+        }
+    }
+
+    return $cleaned
 }
 
 function Convert-PartnerStockInput {
@@ -221,9 +270,16 @@ if (-not $data.history)         { $data | Add-Member -NotePropertyName history  
 # 兼容旧数据：partnerStock 统一为对象数组（编号、名称、关联）
 foreach ($h in @($data.holdings)) {
     if ($h.PSObject.Properties.Name -contains 'partnerStock') {
-        $h.partnerStock = @(Normalize-PartnerStocks -Value $h.partnerStock)
+        $h.partnerStock = @(Clean-PartnerStocks -PartnerStocks $h.partnerStock)
     } else {
         $h | Add-Member -NotePropertyName partnerStock -NotePropertyValue @() -Force
+    }
+}
+foreach ($r in @($data.recommendations)) {
+    if ($r.PSObject.Properties.Name -contains 'partnerStock') {
+        $r.partnerStock = @(Clean-PartnerStocks -PartnerStocks $r.partnerStock)
+    } else {
+        $r | Add-Member -NotePropertyName partnerStock -NotePropertyValue @() -Force
     }
 }
 
@@ -249,7 +305,7 @@ if ($Action -eq "add") {
 
     if ($Type -eq "holding") {
         $exists = $data.holdings | Where-Object { $_.code -eq $Code }
-        $partnerStockObjects = Convert-PartnerStockInput -Text $PartnerStock
+        $partnerStockObjects = @(Clean-PartnerStocks -PartnerStocks (Convert-PartnerStockInput -Text $PartnerStock))
         if ($exists) {
             Write-Host "$Code 已在持仓列表中，更新信息" -ForegroundColor Yellow
             if ($Cost -gt 0) { $exists.cost = $Cost }
@@ -281,6 +337,8 @@ if ($Action -eq "add") {
         Write-Host "持仓已添加: $Code $Name (成本:$Cost x $Qty)" -ForegroundColor Cyan
 
     } elseif ($Type -eq "rec") {
+        $existsRec = $data.recommendations | Where-Object { $_.code -eq $Code } | Select-Object -First 1
+        $partnerStockObjects = @(Clean-PartnerStocks -PartnerStocks (Convert-PartnerStockInput -Text $PartnerStock))
         if ($RecPrice -le 0) {
             $q = Get-Quote $Code
             if ($q) { $RecPrice = $q.Price; if (-not $Name) { $Name = $q.Name } }
@@ -289,14 +347,23 @@ if ($Action -eq "add") {
             $q = Get-Quote $Code
             if ($q) { $Name = $q.Name }
         }
-        $entry = [PSCustomObject]@{
-            code     = $Code
-            name     = $Name
-            recPrice = $RecPrice
-            recDate  = $today
-            source   = $Source
+        if ($existsRec) {
+            if ($Name) { $existsRec.name = $Name }
+            if ($RecPrice -gt 0) { $existsRec.recPrice = $RecPrice }
+            if ($Source) { $existsRec.source = $Source }
+            $existsRec.recDate = $today
+            if ($PartnerStock) { $existsRec.partnerStock = @($partnerStockObjects) }
+        } else {
+            $entry = [PSCustomObject]@{
+                code         = $Code
+                name         = $Name
+                recPrice     = $RecPrice
+                recDate      = $today
+                source       = $Source
+                partnerStock = @($partnerStockObjects)
+            }
+            $data.recommendations = @($data.recommendations) + $entry
         }
-        $data.recommendations = @($data.recommendations) + $entry
         Save-Data
         Write-Host "推荐已添加: $Code $Name (推荐价:$RecPrice, 来源:$Source)" -ForegroundColor Cyan
     }
@@ -378,8 +445,9 @@ if ($Action -eq "show") {
             $allCodes[$r.code].recPrice = $r.recPrice
             $allCodes[$r.code].recDate  = $r.recDate
             $allCodes[$r.code].type     = "both"
+            $allCodes[$r.code].recPartnerStock = @(Clean-PartnerStocks -PartnerStocks $r.partnerStock)
         } else {
-            $allCodes[$r.code] = @{name=$r.name; type="rec"; recPrice=$r.recPrice; recDate=$r.recDate}
+            $allCodes[$r.code] = @{name=$r.name; type="rec"; recPrice=$r.recPrice; recDate=$r.recDate; recPartnerStock=@(Clean-PartnerStocks -PartnerStocks $r.partnerStock)}
         }
     }
 
@@ -408,6 +476,8 @@ if ($Action -eq "show") {
                 MktVal   = 0
                 PartnerStock = @(Normalize-PartnerStocks -Value $info.partnerStock)
                 PartnerStockText = Format-PartnerStockDisplay -PartnerStocks $info.partnerStock
+                RecPartnerStock = @(Clean-PartnerStocks -PartnerStocks $info.recPartnerStock)
+                RecPartnerStockText = Format-PartnerStockDisplay -PartnerStocks $info.recPartnerStock
             }
             if ($obj.Cost -gt 0) {
                 $obj.PnL    = [math]::Round(($q.Price - $obj.Cost) * $obj.Qty, 0)
@@ -496,8 +566,8 @@ if ($Action -eq "show") {
         Write-Host "   推荐追踪" -ForegroundColor Yellow
         Write-Host "  ============================================================" -ForegroundColor White
         Write-Host ""
-        Write-Host ("  {0,-8} {1,-8} {2,8} {3,8} {4,9} {5,9} {6,-12}" -f "代码","名称","现价","今日%","推荐价","vs推荐%","推荐日期")
-        Write-Host ("  " + "-" * 72)
+        Write-Host ("  {0,-8} {1,-8} {2,8} {3,8} {4,9} {5,9} {6,-12} {7,-20}" -f "代码","名称","现价","今日%","推荐价","vs推荐%","推荐日期","关联股")
+        Write-Host ("  " + "-" * 96)
         foreach ($s in $recs) {
             $todayStr = "{0,7:F2}%" -f $s.TodayChg
             $vsStr    = "{0,8:F2}%" -f $s.VsRec
@@ -506,7 +576,24 @@ if ($Action -eq "show") {
             Write-Colored $todayStr $s.TodayChg
             Write-Host (" {0,9:F2} " -f $s.RecPrice) -NoNewline
             Write-Colored $vsStr $s.VsRec
-            Write-Host (" {0,-12}" -f $s.RecDate)
+            $recPartnerDisplay = if ($s.RecPartnerStockText) { "$($s.RecPartnerStockText)" } else { "-" }
+            if ($recPartnerDisplay.Length -gt 20) { $recPartnerDisplay = $recPartnerDisplay.Substring(0,20) }
+            Write-Host (" {0,-12} {1,-20}" -f $s.RecDate, $recPartnerDisplay)
+        }
+
+        $recPartnerRows = $recs | Where-Object { $_.RecPartnerStock -and $_.RecPartnerStock.Count -gt 0 }
+        if ($recPartnerRows.Count -gt 0) {
+            Write-Host ""
+            Write-Host "  推荐关联股票信息" -ForegroundColor DarkYellow
+            foreach ($r in $recPartnerRows) {
+                Write-Host "  $($r.Code) $($r.Name):" -ForegroundColor DarkYellow
+                foreach ($ps in @($r.RecPartnerStock)) {
+                    $psCode = if ($ps.code) { $ps.code } else { "-" }
+                    $psName = if ($ps.name) { $ps.name } else { "-" }
+                    $psRel  = if ($ps.relation) { $ps.relation } else { "-" }
+                    Write-Host "    编号:$psCode  名称:$psName  关联:$psRel" -ForegroundColor DarkYellow
+                }
+            }
         }
     }
 

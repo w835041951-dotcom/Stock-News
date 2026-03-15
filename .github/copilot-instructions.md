@@ -329,7 +329,7 @@ $result = .\Get-AlphaSignal.ps1 -Quiet  # 静默模式
 
 ### partnerStock 字段格式（持仓扩展信息）
 
-在 `watchlist.json` 的 `holdings[*].partnerStock` 中，统一使用对象数组：
+在 `watchlist.json` 的 `holdings[*].partnerStock` 与 `recommendations[*].partnerStock` 中，统一使用对象数组：
 
 ```json
 [
