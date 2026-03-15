@@ -406,6 +406,7 @@ Write-Host "动作: $($timing.Action)  置信度: $($timing.Confidence)"
 | `-Name` | string | 股票名称 |
 | `-Cost` | double | 持仓成本价（元/股） |
 | `-Qty` | int | 持股数量（股） |
+| `-PartnerStock` | string | 持仓关联股票信息，支持 `编号,名称,关联;编号,名称,关联` 或 JSON |
 | `-RecPrice` | double | 推荐时价格 |
 | `-Source` | string | 推荐来源标注（如 `AlphaSignal`） |
 | `-Days` | int | history 模式下回溯天数，默认 7 |
@@ -420,6 +421,12 @@ Write-Host "动作: $($timing.Action)  置信度: $($timing.Confidence)"
 
 # 添加持仓股票（平安银行，成本 12.5 元，买了 1000 股）
 .\Get-Watchlist.ps1 -Action add -Type holding -Code 000001 -Name 平安银行 -Cost 12.50 -Qty 1000
+
+# 添加/更新持仓并写入关联股票信息（简写）
+.\Get-Watchlist.ps1 -Action add -Type holding -Code 000001 -PartnerStock "600036,招商银行,同业对标;002142,宁波银行,区域同业"
+
+# 添加/更新持仓并写入关联股票信息（JSON）
+.\Get-Watchlist.ps1 -Action add -Type holding -Code 000001 -PartnerStock '[{"code":"600036","name":"招商银行","relation":"同业对标"},{"code":"002142","name":"宁波银行","relation":"区域同业"}]'
 
 # 添加观察推荐股（从 AlphaSignal 推荐）
 .\Get-Watchlist.ps1 -Action add -Type rec -Code 600519 -Name 贵州茅台 -RecPrice 1500 -Source AlphaSignal

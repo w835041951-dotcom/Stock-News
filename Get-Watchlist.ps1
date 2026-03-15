@@ -20,6 +20,8 @@
     持仓成本价
 .PARAMETER Qty
     持仓数量
+.PARAMETER PartnerStock
+    关联股票信息（支持 JSON 或简写：编号,名称,关联;编号,名称,关联）
 .PARAMETER RecPrice
     推荐价格
 .PARAMETER Source
@@ -40,6 +42,7 @@ param(
     [string]$Name = "",
     [double]$Cost = 0,
     [int]$Qty = 0,
+    [string]$PartnerStock = "",
     [double]$RecPrice = 0,
     [string]$Source = "AlphaSignal",
     [int]$Days = 7,
@@ -75,6 +78,92 @@ function Set-CachedData {
     param([string]$Key, $Value)
     $file = Join-Path $script:CacheDir "$Key.json"
     try { $Value | ConvertTo-Json -Depth 8 | Out-File $file -Encoding UTF8 } catch {}
+}
+
+function Normalize-PartnerStocks {
+    param($Value)
+
+    $normalized = @()
+    if ($null -eq $Value) { return $normalized }
+
+    if ($Value -is [string]) {
+        $raw = $Value.Trim()
+        if (-not $raw) { return $normalized }
+
+        # 兼容旧格式："A, B, C" 仅名称列表
+        if ($raw -notmatch ';' -and $raw -notmatch '\|') {
+            $parts = $raw -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+            foreach ($p in $parts) {
+                $normalized += [PSCustomObject]@{ code = ""; name = $p; relation = "" }
+            }
+            return $normalized
+        }
+
+        # 简写格式：编号,名称,关联;编号,名称,关联
+        $segments = $raw -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+        foreach ($seg in $segments) {
+            $fields = $seg -split ',', 3 | ForEach-Object { $_.Trim() }
+            $f1 = if ($fields.Count -ge 1) { $fields[0] } else { "" }
+            $f2 = if ($fields.Count -ge 2) { $fields[1] } else { "" }
+            $f3 = if ($fields.Count -ge 3) { $fields[2] } else { "" }
+            if ($f1 -or $f2 -or $f3) {
+                $normalized += [PSCustomObject]@{ code = $f1; name = $f2; relation = $f3 }
+            }
+        }
+        return $normalized
+    }
+
+    foreach ($item in @($Value)) {
+        if ($item -is [string]) {
+            $name = $item.Trim()
+            if ($name) { $normalized += [PSCustomObject]@{ code = ""; name = $name; relation = "" } }
+            continue
+        }
+
+        $code = if ($item.PSObject.Properties.Name -contains 'code') { "$($item.code)" } else { "" }
+        $name = if ($item.PSObject.Properties.Name -contains 'name') { "$($item.name)" } else { "" }
+        $rel  = if ($item.PSObject.Properties.Name -contains 'relation') { "$($item.relation)" } else { "" }
+        if ($code -or $name -or $rel) {
+            $normalized += [PSCustomObject]@{ code = $code; name = $name; relation = $rel }
+        }
+    }
+
+    return $normalized
+}
+
+function Convert-PartnerStockInput {
+    param([string]$Text)
+
+    if (-not $Text) { return @() }
+
+    $trimmed = $Text.Trim()
+    if (-not $trimmed) { return @() }
+
+    if ($trimmed.StartsWith('[') -or $trimmed.StartsWith('{')) {
+        try {
+            $obj = $trimmed | ConvertFrom-Json
+            return (Normalize-PartnerStocks -Value $obj)
+        } catch {
+            # 回退为简写解析
+        }
+    }
+
+    return (Normalize-PartnerStocks -Value $trimmed)
+}
+
+function Format-PartnerStockDisplay {
+    param($PartnerStocks)
+
+    $rows = Normalize-PartnerStocks -Value $PartnerStocks
+    if ($rows.Count -eq 0) { return "" }
+
+    $pieces = @()
+    foreach ($r in $rows) {
+        $name = if ($r.name) { $r.name } elseif ($r.code) { $r.code } else { "" }
+        $rel  = if ($r.relation) { "($($r.relation))" } else { "" }
+        if ($name) { $pieces += ("$name$rel") }
+    }
+    return ($pieces -join '，')
 }
 
 # ── Helper: Market code ──
@@ -129,6 +218,15 @@ if (-not $data.holdings)        { $data | Add-Member -NotePropertyName holdings 
 if (-not $data.recommendations) { $data | Add-Member -NotePropertyName recommendations -NotePropertyValue @() -Force }
 if (-not $data.history)         { $data | Add-Member -NotePropertyName history         -NotePropertyValue @() -Force }
 
+# 兼容旧数据：partnerStock 统一为对象数组（编号、名称、关联）
+foreach ($h in @($data.holdings)) {
+    if ($h.PSObject.Properties.Name -contains 'partnerStock') {
+        $h.partnerStock = @(Normalize-PartnerStocks -Value $h.partnerStock)
+    } else {
+        $h | Add-Member -NotePropertyName partnerStock -NotePropertyValue @() -Force
+    }
+}
+
 # ── Save helper ──
 function Save-Data {
     $data | ConvertTo-Json -Depth 5 | Out-File $dataFile -Encoding UTF8
@@ -151,11 +249,19 @@ if ($Action -eq "add") {
 
     if ($Type -eq "holding") {
         $exists = $data.holdings | Where-Object { $_.code -eq $Code }
+        $partnerStockObjects = Convert-PartnerStockInput -Text $PartnerStock
         if ($exists) {
             Write-Host "$Code 已在持仓列表中，更新信息" -ForegroundColor Yellow
             if ($Cost -gt 0) { $exists.cost = $Cost }
             if ($Qty -gt 0)  { $exists.qty = $Qty }
             if ($Name)       { $exists.name = $Name }
+            if ($PartnerStock) {
+                if ($exists.PSObject.Properties.Name -contains 'partnerStock') {
+                    $exists.partnerStock = @($partnerStockObjects)
+                } else {
+                    $exists | Add-Member -NotePropertyName partnerStock -NotePropertyValue @($partnerStockObjects) -Force
+                }
+            }
         } else {
             if (-not $Name) {
                 $q = Get-Quote $Code
@@ -166,6 +272,7 @@ if ($Action -eq "add") {
                 name      = $Name
                 cost      = $Cost
                 qty       = $Qty
+                partnerStock = @($partnerStockObjects)
                 addedDate = $today
             }
             $data.holdings = @($data.holdings) + $entry
@@ -257,7 +364,15 @@ if ($Action -eq "update") {
 # ===================== ACTION: SHOW =====================
 if ($Action -eq "show") {
     $allCodes = @{}
-    foreach ($h in $data.holdings) { $allCodes[$h.code] = @{name=$h.name; type="holding"; cost=$h.cost; qty=$h.qty} }
+    foreach ($h in $data.holdings) {
+        $allCodes[$h.code] = @{
+            name         = $h.name
+            type         = "holding"
+            cost         = $h.cost
+            qty          = $h.qty
+            partnerStock = @(Normalize-PartnerStocks -Value $h.partnerStock)
+        }
+    }
     foreach ($r in $data.recommendations) {
         if ($allCodes.ContainsKey($r.code)) {
             $allCodes[$r.code].recPrice = $r.recPrice
@@ -291,6 +406,8 @@ if ($Action -eq "show") {
                 RecDate  = if ($info.recDate) { $info.recDate } else { "" }
                 VsRec    = 0
                 MktVal   = 0
+                PartnerStock = @(Normalize-PartnerStocks -Value $info.partnerStock)
+                PartnerStockText = Format-PartnerStockDisplay -PartnerStocks $info.partnerStock
             }
             if ($obj.Cost -gt 0) {
                 $obj.PnL    = [math]::Round(($q.Price - $obj.Cost) * $obj.Qty, 0)
@@ -316,8 +433,8 @@ if ($Action -eq "show") {
         Write-Host "   持仓" -ForegroundColor Cyan
         Write-Host "  ============================================================" -ForegroundColor White
         Write-Host ""
-        Write-Host ("  {0,-8} {1,-8} {2,8} {3,8} {4,10} {5,9} {6,9}" -f "代码","名称","现价","今日%","浮盈","浮盈%","市值")
-        Write-Host ("  " + "-" * 72)
+        Write-Host ("  {0,-8} {1,-8} {2,8} {3,8} {4,10} {5,9} {6,9} {7,-20}" -f "代码","名称","现价","今日%","浮盈","浮盈%","市值","关联股")
+        Write-Host ("  " + "-" * 94)
         $totalPnL = 0
         $totalMV  = 0
         foreach ($s in $holdings) {
@@ -331,16 +448,33 @@ if ($Action -eq "show") {
             Write-Colored $pnlStr $s.PnL
             Write-Host " " -NoNewline
             Write-Colored $pctStr $s.PnLPct
-            Write-Host (" {0,9:N0}" -f $s.MktVal)
+            $partnerDisplay = if ($s.PartnerStockText) { "$($s.PartnerStockText)" } else { "-" }
+            if ($partnerDisplay.Length -gt 20) { $partnerDisplay = $partnerDisplay.Substring(0,20) }
+            Write-Host (" {0,9:N0} {1,-20}" -f $s.MktVal, $partnerDisplay)
             $totalPnL += $s.PnL
             $totalMV  += $s.MktVal
         }
-        Write-Host ("  " + "-" * 72)
+        Write-Host ("  " + "-" * 94)
         $totalLine = "  合计{0,48:N0} " -f $totalPnL
         Write-Host $totalLine -NoNewline
         $totalPct = if ($totalMV -gt 0) { [math]::Round($totalPnL / ($totalMV - $totalPnL) * 100, 2) } else { 0 }
         Write-Colored ("{0,8:F2}%" -f $totalPct) $totalPnL
-        Write-Host (" {0,9:N0}" -f $totalMV)
+        Write-Host (" {0,9:N0} {1,-20}" -f $totalMV, "-")
+
+        $partnerRows = $holdings | Where-Object { $_.PartnerStock -and $_.PartnerStock.Count -gt 0 }
+        if ($partnerRows.Count -gt 0) {
+            Write-Host ""
+            Write-Host "  关联股票信息" -ForegroundColor Magenta
+            foreach ($p in $partnerRows) {
+                Write-Host "  $($p.Code) $($p.Name):" -ForegroundColor DarkMagenta
+                foreach ($ps in @($p.PartnerStock)) {
+                    $psCode = if ($ps.code) { $ps.code } else { "-" }
+                    $psName = if ($ps.name) { $ps.name } else { "-" }
+                    $psRel  = if ($ps.relation) { $ps.relation } else { "-" }
+                    Write-Host "    编号:$psCode  名称:$psName  关联:$psRel" -ForegroundColor DarkMagenta
+                }
+            }
+        }
 
         $both = $holdings | Where-Object { $_.Type -eq "both" }
         if ($both.Count -gt 0) {

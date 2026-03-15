@@ -5,42 +5,139 @@
       "name": "分众传媒",
       "cost": 7.152,
       "qty": 13000,
-      "addedDate": "2026-03-12"
+      "addedDate": "2026-03-12",
+      "partnerStock": [
+        {
+          "code": "",
+          "name": "春晚科技",
+          "relation": ""
+        },
+        {
+          "code": "",
+          "name": "公司关于发行股份",
+          "relation": ""
+        }
+      ]
     },
     {
       "code": "600489",
       "name": "中金黄金",
       "cost": 34.3727,
       "qty": 2200,
-      "addedDate": "2026-03-12"
+      "addedDate": "2026-03-12",
+      "partnerStock": [
+        {
+          "code": "",
+          "name": "得大额订单等信息",
+          "relation": ""
+        },
+        {
+          "code": "",
+          "name": "通威股份",
+          "relation": ""
+        },
+        {
+          "code": "",
+          "name": "共推矿业电气",
+          "relation": ""
+        }
+      ]
     },
     {
       "code": "603444",
       "name": "吉比特",
       "cost": 423.615,
       "qty": 100,
-      "addedDate": "2026-03-12"
+      "addedDate": "2026-03-12",
+      "partnerStock": [
+        {
+          "code": "",
+          "name": "天孚通信",
+          "relation": ""
+        },
+        {
+          "code": "",
+          "name": "雅博股份",
+          "relation": ""
+        },
+        {
+          "code": "",
+          "name": "目前未在公开信息",
+          "relation": ""
+        }
+      ]
     },
     {
       "code": "000333",
       "name": "美的集团",
       "cost": 78.9125,
       "qty": 400,
-      "addedDate": "2026-03-12"
+      "addedDate": "2026-03-12",
+      "partnerStock": [
+        {
+          "code": "",
+          "name": "美的集团新能源",
+          "relation": ""
+        },
+        {
+          "code": "",
+          "name": "深圳科陆电子",
+          "relation": ""
+        },
+        {
+          "code": "000651",
+          "name": "格力电器",
+          "relation": ""
+        }
+      ]
     },
     {
       "code": "002527",
       "name": "新时达",
       "cost": 14.912,
       "qty": 2600,
-      "addedDate": "2026-03-13"
+      "addedDate": "2026-03-13",
+      "partnerStock": [
+        {
+          "code": "600973",
+          "name": "宝胜股份",
+          "relation": ""
+        },
+        {
+          "code": "",
+          "name": "宝胜股份",
+          "relation": ""
+        },
+        {
+          "code": "",
+          "name": "有关公司信息",
+          "relation": ""
+        }
+      ]
     },
     {
       "code": "603501",
       "name": "豪威集团",
       "cost": 112.5081,
       "qty": 300,
-      "addedDate": "2026-03-13"
+      "addedDate": "2026-03-13",
+      "partnerStock": [
+        {
+          "code": "",
+          "name": "龙旗科技",
+          "relation": ""
+        },
+        {
+          "code": "",
+          "name": "通威股份",
+          "relation": ""
+        },
+        {
+          "code": "",
+          "name": "海光信息",
+          "relation": ""
+        }
+      ]
     }
   ],
   "recommendations": [
@@ -184,6 +281,105 @@
       "change": -2.15,
       "high": 32.08,
       "low": 30.95
+    },
+    {
+      "date": "2026-03-14",
+      "code": "002768",
+      "name": "国恩股份",
+      "close": 53.86,
+      "change": 2.12,
+      "high": 54.88,
+      "low": 52.29
+    },
+    {
+      "date": "2026-03-14",
+      "code": "002171",
+      "name": "楚江新材",
+      "close": 12.4,
+      "change": -2.52,
+      "high": 12.72,
+      "low": 12.36
+    },
+    {
+      "date": "2026-03-14",
+      "code": "600489",
+      "name": "中金黄金",
+      "close": 30.77,
+      "change": -1.82,
+      "high": 32.08,
+      "low": 30.67
+    },
+    {
+      "date": "2026-03-14",
+      "code": "601899",
+      "name": "紫金矿业",
+      "close": 35.77,
+      "change": -2.67,
+      "high": 36.94,
+      "low": 35.6
+    },
+    {
+      "date": "2026-03-14",
+      "code": "603444",
+      "name": "吉比特",
+      "close": 381.29,
+      "change": 0.08,
+      "high": 390.89,
+      "low": 379.02
+    },
+    {
+      "date": "2026-03-14",
+      "code": "600388",
+      "name": "龙净环保",
+      "close": 19.21,
+      "change": -1.74,
+      "high": 19.87,
+      "low": 19.1
+    },
+    {
+      "date": "2026-03-14",
+      "code": "002027",
+      "name": "分众传媒",
+      "close": 6.87,
+      "change": 1.03,
+      "high": 6.89,
+      "low": 6.76
+    },
+    {
+      "date": "2026-03-14",
+      "code": "002527",
+      "name": "新时达",
+      "close": 14.83,
+      "change": -0.6,
+      "high": 15.07,
+      "low": 14.78
+    },
+    {
+      "date": "2026-03-14",
+      "code": "000333",
+      "name": "美的集团",
+      "close": 76.86,
+      "change": -0.7,
+      "high": 77.46,
+      "low": 76.65
+    },
+    {
+      "date": "2026-03-14",
+      "code": "603501",
+      "name": "韦尔股份",
+      "close": 111.73,
+      "change": -0.97,
+      "high": 113.17,
+      "low": 111.35
+    },
+    {
+      "date": "2026-03-14",
+      "code": "002215",
+      "name": "诺普信",
+      "close": 11.24,
+      "change": 3.5,
+      "high": 11.48,
+      "low": 10.85
     }
   ]
 }

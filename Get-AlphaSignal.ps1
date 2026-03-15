@@ -1032,11 +1032,15 @@ foreach ($stk in $decliners) {
         $profG = $latest.PARENTNETPROFITTZ
         $roe = $latest.ROEJQ
 
-        if ($null -ne $revG -and $null -ne $profG -and
-            [double]$revG -gt 0 -and [double]$profG -gt 0) {
-            $stk.RevGrowth    = [Math]::Round([double]$revG, 1)
-            $stk.ProfitGrowth = [Math]::Round([double]$profG, 1)
-            $stk.ROE          = if ($null -ne $roe) { [Math]::Round([double]$roe, 1) } else { $null }
+        $revGd = 0.0; $profGd = 0.0
+        $revOk  = $null -ne $revG  -and [double]::TryParse("$revG",  [ref]$revGd)
+        $profOk = $null -ne $profG -and [double]::TryParse("$profG", [ref]$profGd)
+
+        if ($revOk -and $profOk -and $revGd -gt 0 -and $profGd -gt 0) {
+            $stk.RevGrowth    = [Math]::Round($revGd, 1)
+            $stk.ProfitGrowth = [Math]::Round($profGd, 1)
+            $roeD = 0.0
+            $stk.ROE          = if ($null -ne $roe -and [double]::TryParse("$roe", [ref]$roeD)) { [Math]::Round($roeD, 1) } else { $null }
             $stk.ReportName   = $latest.REPORT_DATE_NAME
 
             # ── 三维评分 (满分100) ──
@@ -1059,8 +1063,9 @@ foreach ($stk in $decliners) {
 
             # 毛利率 bonus (上限40分)
             $grossMargin = $latest.XSMLL
-            if ($null -ne $grossMargin -and "$grossMargin" -ne "") {
-                $gm = [double]$grossMargin
+            $gmD = 0.0
+            if ($null -ne $grossMargin -and [double]::TryParse("$grossMargin", [ref]$gmD)) {
+                $gm = $gmD
                 if ($gm -gt 50) { $fundScore += 5 }
                 elseif ($gm -gt 30) { $fundScore += 3 }
                 elseif ($gm -gt 15) { $fundScore += 1 }
@@ -1091,8 +1096,8 @@ foreach ($stk in $decliners) {
         }
         else {
             if (-not $Quiet) {
-                $revStr = if ($null -ne $revG) { "{0:N1}%" -f [double]$revG } else { "N/A" }
-                $profStr = if ($null -ne $profG) { "{0:N1}%" -f [double]$profG } else { "N/A" }
+                $revStr  = if ($revOk)  { "{0:N1}%" -f $revGd  } else { "N/A" }
+                $profStr = if ($profOk) { "{0:N1}%" -f $profGd } else { "N/A" }
                 Write-Host "    -- $($stk.Code) $($stk.Name) " -NoNewline -ForegroundColor DarkGray
                 Write-Host "营收$revStr 净利$profStr" -ForegroundColor DarkGray
             }

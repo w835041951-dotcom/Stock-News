@@ -327,6 +327,22 @@ $result = .\Get-AlphaSignal.ps1 -Quiet  # 静默模式
 
 维护持仓和推荐股列表，获取实时行情，记录每日收盘历史，追踪推荐 vs 实际表现。
 
+### partnerStock 字段格式（持仓扩展信息）
+
+在 `watchlist.json` 的 `holdings[*].partnerStock` 中，统一使用对象数组：
+
+```json
+[
+   { "code": "600036", "name": "招商银行", "relation": "同业对标" },
+   { "code": "002142", "name": "宁波银行", "relation": "区域同业" }
+]
+```
+
+字段约定：
+- `code`：关联股票编号（可为空）
+- `name`：关联股票名称
+- `relation`：关联关系说明（如供应链/客户/同业/主题联动）
+
 ### 数据文件
 
 `watchlist.json` — 存储持仓、推荐、历史行情记录。
