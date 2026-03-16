@@ -135,9 +135,8 @@ Get-Content '...\result.json' | ConvertFrom-Json
 ## 数据来源
 
 - **东方财富 (East Money)** push2 API：行业板块、概念板块、板块成分股实时行情、K线、资金流
-- **新浪财经 (Sina Finance)** 滚动新闻 API：最新财经要闻
+- **新浪财经 (Sina Finance)** ：滚动新闻 API + 美股/期货实时行情（hq.sinajs.cn）+ A股K线
 - **雪球 / 36Kr**：情绪分析
-- **Yahoo Finance**：美股行情
 - **Akshare (Python)**：A 股历史财务数据
 
 ## 脚本总览
