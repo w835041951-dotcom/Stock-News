@@ -78,26 +78,36 @@ Get-Content '...\result.json' | ConvertFrom-Json
 
 ## 快捷指令映射
 
-当用户说以下话时，自动执行对应操作：
+当用户说以下话时，自动执行对应操作。**优先使用原子操作（秒级），只有明确需要完整分析时才调用编排脚本（分钟级）。**
 
 | 用户说 | 实际操作 |
 |-------|---------|
 | "股票推荐" / "推荐股票" | `.\Get-MarketHotspot.ps1 -Action recommend` |
 | "今日热点" / "市场热点" | `.\Get-MarketHotspot.ps1 -Action all` |
-| "热门板块" | `.\Get-MarketHotspot.ps1 -Action sectors` |
-| "财经新闻" / "最新新闻" | `.\Get-MarketHotspot.ps1 -Action news` |
+| "热门板块" | `.\Get-SectorRanking.ps1` |
+| "财经新闻" / "最新新闻" | `.\Get-MarketNews.ps1` |
+| "有啥消息" / "最新消息" / "看看消息" | `.\Get-MarketNews.ps1` + `.\Get-TrendingTopics.ps1 -Action intl` |
+| "国内新闻" | `.\Get-MarketNews.ps1` |
 | "热搜" / "社会热点" / "trending" | `.\Get-TrendingTopics.ps1 -Action all` |
 | "国内热搜" / "百度热搜" | `.\Get-TrendingTopics.ps1 -Action cn` |
 | "美国热搜" / "US trends" | `.\Get-TrendingTopics.ps1 -Action us` |
 | "日本热搜" / "JP trends" | `.\Get-TrendingTopics.ps1 -Action jp` |
 | "欧洲热搜" / "EU trends" | `.\Get-TrendingTopics.ps1 -Action eu` |
 | "国际热搜" / "intl trends" | `.\Get-TrendingTopics.ps1 -Action intl` |
-| "查股票 XXX" / "财报 XXX" / "stock XXX" | `.\Get-StockDetail.ps1 -Code XXX` |
+| "XXX 多少钱" / "XXX 价格" / "XXX quote" | `.\Get-StockQuote.ps1 -Code XXX` |
+| "XXX 涨跌" / "XXX 最近走势" | `.\Get-StockKline.ps1 -Code XXX` |
+| "XXX 财报" / "XXX 基本面" | `.\Get-StockFinance.ps1 -Code XXX` |
+| "查股票 XXX" / "分析 XXX" / "stock XXX" | `.\Get-StockQuote.ps1` + `.\Get-StockFinance.ps1` + `.\Get-CapeValuation.ps1` + `.\Get-EntryTiming.ps1`（四合一） |
+| "XXX 评分" / "给 XXX 打分" | `.\Get-StockScore.ps1 -Code XXX` |
 | "席勒估值 XXX" / "CAPE XXX" / "席勒市盈率 XXX" | `.\Get-CapeValuation.ps1 -Code XXX` |
+| "买点 XXX" / "几点入手 XXX" / "entry timing XXX" | `.\Get-EntryTiming.ps1 -Code XXX` |
+| "板块排行" / "今天哪些板块好" | `.\Get-SectorRanking.ps1` |
+| "XXX 板块成分股" / "XXX 板块有啥股" | `.\Get-SectorRanking.ps1` → 找板块Code → `.\Get-SectorStocks.ps1 -SectorCode BKxxxx -MainBoardOnly` |
+| "情绪" / "市场情绪" / "sentiment" | `.\Get-MarketSentiment.ps1` |
+| "今天市场怎么样" / "盘面怎么样" | `.\Get-MarketNews.ps1` + `.\Get-SectorRanking.ps1` + `.\Get-MarketSentiment.ps1`（三合一） |
 | "找合作股 XXX" / "关联A股 XXX" / "partner stocks XXX" | `.\Get-PartnerStocks.ps1 -Target XXX` |
 | "美股强势" / "US leaders" / "美股映射A股" | `.\Get-USStrongAStocks.ps1` |
 | "alpha" / "选股" / "信息差" / "alpha signal" | `.\Get-AlphaSignal.ps1` |
-| "买点 XXX" / "几点入手 XXX" / "entry timing XXX" | `.\Get-EntryTiming.ps1 -Code XXX` |
 | "我的股票" / "看看我的股票" / "持仓" | `.\Get-Watchlist.ps1` |
 | "看看推荐" / "推荐追踪" / "watchlist" | `.\Get-Watchlist.ps1` |
 | "更新行情" / "记录今天" | `.\Get-Watchlist.ps1 -Action update` |
@@ -140,6 +150,47 @@ Get-Content '...\result.json' | ConvertFrom-Json
 | `Get-TrendingTopics.ps1` | 全球热搜（百度/谷歌/头条）趋势先行指标 | 10~30 秒 |
 | `Get-Backtest.ps1` | 回测：追踪历史推荐的实际涨跌表现 + 胜率统计 | 1~3 分钟 |
 | `Get-DailyBrief.ps1` | 每日早报：一句话总结 + TOP3 + 热点，可保存桌面 | 3~5 分钟 |
+
+### 原子操作脚本（Layer 2）
+
+快速、独立、可组合的轻量脚本。**优先使用原子操作**来回答简单问题，避免调用耗时几分钟的编排脚本。
+
+| 脚本 | 功能 | 典型耗时 |
+|------|------|----------|
+| `Get-StockQuote.ps1` | 单股实时行情（价格/涨跌/PE/PB/换手率） | <1 秒 |
+| `Get-StockKline.ps1` | K线数据 + 近一周/近一月涨跌幅 | <2 秒 |
+| `Get-StockFinance.ps1` | 最近 4~8 期财报核心指标 | <3 秒 |
+| `Get-SectorRanking.ps1` | 热门板块排行（行业 + 概念，含噪音过滤） | <5 秒 |
+| `Get-SectorStocks.ps1` | 板块成分股列表（支持主板过滤） | <3 秒 |
+| `Get-MarketNews.ps1` | 多源新闻聚合（新浪 + 东财） | <10 秒 |
+| `Get-MarketSentiment.ps1` | 情绪指数 1-10（东财/雪球/36Kr/同花顺） | <15 秒 |
+| `Get-StockScore.ps1` | 单股百分制评分（基本面+技术+估值） | <10 秒 |
+
+### 共享基础设施（lib/）
+
+| 模块 | 功能 |
+|------|------|
+| `lib/StockApi.ps1` | HTTP Client + 磁盘缓存（Get-CachedData / Set-CachedData / Invoke-StockApi） |
+| `lib/StockCode.ps1` | 股票代码解析（Resolve-StockCode）+ 主板过滤（Test-MainBoard）+ 行业常量 |
+| `lib/Format.ps1` | 格式化工具（Format-LargeNumber / Format-Percent / PadR / PadL / CJK宽度） |
+| `lib/SaveRecLog.ps1` | 推荐记录统一写入 CSV（所有推荐脚本共享，支持 Source 字段追踪来源） |
+
+### 原子组合策略
+
+当用户问简单问题时，**组合原子操作**秒级响应，而非调用耗时的编排脚本：
+
+| 用户问题 | 组合方式 | 总耗时 |
+|---------|---------|--------|
+| "600519 现在多少钱" | `Get-StockQuote 600519` | <1s |
+| "有啥消息" / "最新消息" | `Get-MarketNews` + `Get-TrendingTopics -Action intl`（财经+国际并行） | <15s |
+| "国内新闻" / "财经新闻" | `Get-MarketNews` | <10s |
+| "哪些板块涨得好" | `Get-SectorRanking` | <5s |
+| "分析一下 600519" | `Get-StockQuote` + `Get-StockFinance` + `Get-CapeValuation` + `Get-EntryTiming` | <15s |
+| "市场情绪怎么样" | `Get-MarketSentiment` | <15s |
+| "给 600519 打个分" | `Get-StockScore -Code 600519` | <10s |
+| "军工板块成分股" | `Get-SectorRanking` → 找到军工板块Code → `Get-SectorStocks -SectorCode BKxxxx -MainBoardOnly` | <8s |
+| "今天市场怎么样" | `Get-MarketNews` + `Get-SectorRanking` + `Get-MarketSentiment`（三合一） | <15s |
+| "完整选股" | `Get-AlphaSignal`（完整编排器） | 3-6min |
 
 ---
 
@@ -199,7 +250,7 @@ Get-Content '...\result.json' | ConvertFrom-Json
 
 1. **展示结果时**：以表格或列表形式展示，包含股票代码、名称、价格、涨跌幅、所属板块；对推荐股默认追加"几点入手更好"。
 2. **始终附带免责声明**：此为数据分析参考，不构成投资建议。
-3. **非交易时段 API 限制**：东方财富板块 API 在非交易时段（晚上/凌晨）会间歇性失败（`ResponseEnded`），导致板块/成分股数据为空。降级策略：① 用新浪财经新闻推断热门主线 → ② 手动指定代表代码池 → ③ 逐只调用 `Get-StockDetail.ps1 -Action price -Quiet` 获取近一周/一月涨跌幅 → ④ 按 `Month1Change` 排序筛低位 → ⑤ 调用 `Get-CapeValuation.ps1` 估值。
+3. **非交易时段 API 限制**：东方财富板块 API 在非交易时段（晚上/凌晨）会间歇性失败（`ResponseEnded`），导致板块/成分股数据为空。降级策略：① 用 `Get-MarketNews.ps1` 推断热门主线 → ② 手动指定代表代码池 → ③ 逐只调用 `Get-StockKline.ps1 -Code XXX -Quiet` 获取近一周/一月涨跌幅 → ④ 按 `Month1Change` 排序筛低位 → ⑤ 调用 `Get-CapeValuation.ps1` 估值。
 4. **网络错误时**：展示错误信息，建议检查网络连接。
 
 ## 前置要求

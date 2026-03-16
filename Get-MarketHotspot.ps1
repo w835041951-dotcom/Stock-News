@@ -43,6 +43,10 @@ $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding           = $utf8NoBom
 $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
 
+# ── 共享库 ──
+$script:ProjectRoot = $PSScriptRoot
+. "$PSScriptRoot\lib\SaveRecLog.ps1"
+
 # ── 全局常量（与 Get-AlphaSignal.ps1 保持同步，改行业分类只改这里）──
 $script:CyclicalKeywords = @(
     '化工','化肥','能源','石油','煤炭','有色','金属','钢铁',
@@ -771,6 +775,20 @@ switch ($Action) {
 }
 
 $result.Sentiment = $sentiment
+
+# ── 保存推荐到 CSV（供回测使用）──
+if ($result.Recommendations -and $result.Recommendations.Count -gt 0) {
+    $recForLog = @($result.Recommendations | ForEach-Object {
+        [PSCustomObject]@{
+            Code  = $_.StockCode
+            Name  = $_.StockName
+            Price = $_.Price
+            Score = $_.Score
+        }
+    })
+    $sentScore = if ($sentiment) { [int][Math]::Round($sentiment.SentimentIndex) } else { 0 }
+    Save-RecommendationLog -Stocks $recForLog -Source "MarketHotspot" -SentimentScore $sentScore
+}
 
 if (-not $Quiet) {
     Write-Host "`n========================================" -ForegroundColor Cyan

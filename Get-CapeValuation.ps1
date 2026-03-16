@@ -103,15 +103,15 @@ function Get-CapeLevel {
 $parsed = Resolve-StockCode -InputCode $Code
 if (-not $parsed) { return $null }
 # 1) Current price and PE_TTM
-# f57=小数位数, f43=现价, f58=股票名称, f164=PE(TTM)
-$quoteUrl = "https://push2.eastmoney.com/api/qt/stock/get?secid=$($parsed.SecId)&fields=f43,f57,f58,f164"
+# f59=小数位数, f43=现价, f58=股票名称, f164=PE(TTM)
+$quoteUrl = "https://push2.eastmoney.com/api/qt/stock/get?secid=$($parsed.SecId)&fields=f43,f58,f59,f164"
 $quote = Invoke-ApiRequest -Url $quoteUrl
 if (-not $quote -or -not $quote.data) {
     if (-not $Quiet) { Write-Warning "Failed to fetch quote data for $Code." }
     return $null
 }
 
-$dec = if ($quote.data.f57 -and [int]$quote.data.f57 -gt 0) { [int]$quote.data.f57 } else { 2 }
+$dec = if ($quote.data.f59 -and [int]$quote.data.f59 -gt 0 -and [int]$quote.data.f59 -le 6) { [int]$quote.data.f59 } else { 2 }
 $price = [Math]::Round([double]$quote.data.f43 / [Math]::Pow(10, $dec), $dec)
 $name = [string]$quote.data.f58
 $peTtmRaw = $quote.data.f164

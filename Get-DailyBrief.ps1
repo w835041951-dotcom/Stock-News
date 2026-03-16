@@ -27,6 +27,10 @@ $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = $utf8NoBom
 $OutputEncoding           = $utf8NoBom
 
+# ── 共享库 ──
+$script:ProjectRoot = $PSScriptRoot
+. "$PSScriptRoot\lib\SaveRecLog.ps1"
+
 $alphaScript = Join-Path $PSScriptRoot 'Get-AlphaSignal.ps1'
 if (-not (Test-Path $alphaScript)) {
     Write-Host "  找不到 Get-AlphaSignal.ps1，请确认脚本目录正确" -ForegroundColor Red
@@ -189,6 +193,11 @@ if ($Save) {
         Write-Host ""
         Write-Host "  早报已保存至桌面：$fileName" -ForegroundColor Green
     }
+}
+
+# ── 保存推荐到 CSV（DailyBrief 本身的 TOP N 作为推荐源记录）──
+if ($topStocks -and $topStocks.Count -gt 0) {
+    Save-RecommendationLog -Stocks $topStocks -Source "DailyBrief" -SentimentScore $sentIdx
 }
 
 $briefObj = [PSCustomObject]@{

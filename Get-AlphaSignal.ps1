@@ -32,6 +32,10 @@ $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding           = $utf8NoBom
 $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
 
+# ── 共享库 ──
+$script:ProjectRoot = $PSScriptRoot
+. "$PSScriptRoot\lib\SaveRecLog.ps1"
+
 # ── 全局常量（所有脚本共享同一份，改行业分类只需改这里）──────
 $script:CyclicalKeywords = @(
     '化工','化肥','能源','石油','煤炭','有色','金属','钢铁',
@@ -1272,41 +1276,7 @@ foreach ($stk in @($alphaStocks)) {
 # ══════════════════════════════════════════════════════════════
 
 # ── 回测日志：自动保存推荐记录 ──
-function Save-RecommendationLog {
-    param($Stocks, [int]$SentimentScore)
-    $logFile = Join-Path $PSScriptRoot "recommendations-log.csv"
-    $today = Get-Date -Format "yyyy-MM-dd"
-    # 避免同一天同一只股票重复写入（允许多轮追加新股票）
-    $existingCodes = @()
-    if (Test-Path $logFile) {
-        try {
-            $existingCodes = @(Import-Csv $logFile -Encoding UTF8 | Where-Object { $_.Date -eq $today } | ForEach-Object { $_.Code })
-        } catch {}
-    }
-    $rows = @($Stocks | Where-Object { $_.Code -notin $existingCodes } | ForEach-Object {
-        [PSCustomObject]@{
-            Date         = $today
-            Code         = $_.Code
-            Name         = $_.Name
-            Price        = $_.Price
-            Score        = $_.Score
-            SignalType   = $_.SignalType
-            HoldPeriod   = $_.HoldPeriod
-            PosSize      = $_.PosSize
-            StopLoss     = $_.StopLoss
-            SentimentIdx = $SentimentScore
-            PE_TTM       = if ($_.Valuation) { $_.Valuation.PE_TTM } else { $null }
-            PEG          = $_.PEG
-        }
-    })
-    try {
-        if ($rows.Count -gt 0) {
-            $rows | Export-Csv $logFile -Append -NoTypeInformation -Encoding UTF8
-        }
-    } catch {}
-}
-
-Save-RecommendationLog -Stocks $alphaStocks -SentimentScore ([int][Math]::Round($sentiment.SentimentIndex))
+Save-RecommendationLog -Stocks $alphaStocks -Source "AlphaSignal" -SentimentScore ([int][Math]::Round($sentiment.SentimentIndex))
 
 if ($Quiet) {
     return [PSCustomObject]@{
