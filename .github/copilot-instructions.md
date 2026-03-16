@@ -105,6 +105,9 @@ Get-Content '...\result.json' | ConvertFrom-Json
 | "XXX 板块成分股" / "XXX 板块有啥股" | `.\Get-SectorRanking.ps1` → 找板块Code → `.\Get-SectorStocks.ps1 -SectorCode BKxxxx -MainBoardOnly` |
 | "情绪" / "市场情绪" / "sentiment" | `.\Get-MarketSentiment.ps1` |
 | "今天市场怎么样" / "盘面怎么样" | `.\Get-MarketNews.ps1` + `.\Get-SectorRanking.ps1` + `.\Get-MarketSentiment.ps1`（三合一） |
+| "美股" / "美股行情" / "美股咋样" / "美股黄金" | `.\Get-USMarketQuote.ps1` |
+| "美股盘前" / "美股盘前有啥消息" | `.\Get-USMarketQuote.ps1` + `.\Get-MarketNews.ps1` |
+| "美股涨幅" / "美股有什么涨的好" / "US movers" | `.\Get-USStockMovers.ps1` |
 | "找合作股 XXX" / "关联A股 XXX" / "partner stocks XXX" | `.\Get-PartnerStocks.ps1 -Target XXX` |
 | "美股强势" / "US leaders" / "美股映射A股" | `.\Get-USStrongAStocks.ps1` |
 | "alpha" / "选股" / "信息差" / "alpha signal" | `.\Get-AlphaSignal.ps1` |
@@ -165,6 +168,8 @@ Get-Content '...\result.json' | ConvertFrom-Json
 | `Get-MarketNews.ps1` | 多源新闻聚合（新浪 + 东财） | <10 秒 |
 | `Get-MarketSentiment.ps1` | 情绪指数 1-10（东财/雪球/36Kr/同花顺） | <15 秒 |
 | `Get-StockScore.ps1` | 单股百分制评分（基本面+技术+估值） | <10 秒 |
+| `Get-USMarketQuote.ps1` | 美股三大指数 + 黄金/白银/原油实时行情 | <3 秒 |
+| `Get-USStockMovers.ps1` | 美股热门个股涨跌排行（36只科技/金融/能源/中概） | <5 秒 |
 
 ### 共享基础设施（lib/）
 
@@ -190,6 +195,9 @@ Get-Content '...\result.json' | ConvertFrom-Json
 | "给 600519 打个分" | `Get-StockScore -Code 600519` | <10s |
 | "军工板块成分股" | `Get-SectorRanking` → 找到军工板块Code → `Get-SectorStocks -SectorCode BKxxxx -MainBoardOnly` | <8s |
 | "今天市场怎么样" | `Get-MarketNews` + `Get-SectorRanking` + `Get-MarketSentiment`（三合一） | <15s |
+| "美股咋样" / "美股黄金" | `Get-USMarketQuote`（三大指数+黄金白银原油） | <3s |
+| "美股盘前有啥消息" | `Get-USMarketQuote` + `Get-MarketNews`（行情+新闻） | <15s |
+| "美股涨幅" / "美股有什么涨的好" | `Get-USStockMovers`（36只热门股涨跌排行） | <5s |
 | "完整选股" | `Get-AlphaSignal`（完整编排器） | 3-6min |
 
 ---
