@@ -27,8 +27,8 @@
     {
       "code": "600489",
       "name": "中金黄金",
-      "cost": 34.3727,
-      "qty": 2200,
+      "cost": 33.2829,
+      "qty": 3200,
       "addedDate": "2026-03-12",
       "partnerStock": [
         {
@@ -99,7 +99,7 @@
     {
       "code": "002527",
       "name": "新时达",
-      "cost": 14.912,
+      "cost": 14.9119,
       "qty": 2600,
       "addedDate": "2026-03-13",
       "partnerStock": [
@@ -123,7 +123,7 @@
     {
       "code": "603501",
       "name": "豪威集团",
-      "cost": 112.5081,
+      "cost": 112.5078,
       "qty": 300,
       "addedDate": "2026-03-13",
       "partnerStock": [
@@ -141,6 +141,44 @@
           "code": "",
           "name": "天风电子",
           "relation": "供应链:1"
+        }
+      ]
+    },
+    {
+      "code": "000408",
+      "name": "藏格矿业",
+      "cost": 80.1725,
+      "qty": 400,
+      "addedDate": "2026-03-16",
+      "partnerStock": [
+        {
+          "code": "600301",
+          "name": "Unknown_600301",
+          "relation": "关联:1"
+        },
+        {
+          "code": "600259",
+          "name": "Unknown_600259",
+          "relation": "关联:1"
+        },
+        {
+          "code": "",
+          "name": "国内多种化工",
+          "relation": "关联:1"
+        }
+      ]
+    },
+    {
+      "code": "600039",
+      "name": "四川路桥",
+      "cost": 9.9917,
+      "qty": 3200,
+      "addedDate": "2026-03-16",
+      "partnerStock": [
+        {
+          "code": "",
+          "name": "沐曦股份",
+          "relation": "关联:1"
         }
       ]
     }
