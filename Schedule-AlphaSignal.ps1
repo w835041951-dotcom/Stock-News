@@ -8,7 +8,7 @@ $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding           = $utf8NoBom
 $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
 
-Set-Location "Q:\MyClaw"
+Set-Location "Q:\stock-news"
 
 $date    = Get-Date -Format 'yyyy-MM-dd'
 $desktop = [Environment]::GetFolderPath('Desktop')
