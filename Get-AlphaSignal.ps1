@@ -788,11 +788,16 @@ foreach ($sector in $allSectors) {
                 if (-not $code -or $code -eq "-") { continue }
                 if ($code -notmatch '^(60[0-9]\d{3}|00[012]\d{3}|300\d{3})$') { continue }
                 if (-not $stockMap.ContainsKey($code)) {
+                    $rawPrice = $stk.f2; $rawChg = $stk.f3
+                    if ($rawPrice -eq '-' -or $null -eq $rawPrice) { continue }
+                    $dPrice = 0.0; $dChg = 0.0
+                    if (-not [double]::TryParse("$rawPrice", [ref]$dPrice)) { continue }
+                    [void][double]::TryParse("$rawChg", [ref]$dChg)
                     $stockMap[$code] = [PSCustomObject]@{
                         Code         = $code
                         Name         = "$($stk.f14)"
-                        Price        = [Math]::Round([double]$stk.f2, 2)
-                        DayChange    = [Math]::Round([double]$stk.f3, 2)
+                        Price        = [Math]::Round($dPrice, 2)
+                        DayChange    = [Math]::Round($dChg, 2)
                         Sectors      = [System.Collections.ArrayList]@($sector.Name)
                         Market       = if ($code -match "^6") { 1 } else { 0 }
                         WeekChg      = $null
@@ -1167,10 +1172,12 @@ foreach ($stk in $alphaStocks) {
             }
         }
 
-        # ── 相对估值修正：PE 相对行业中位PE（±5分） ──
+        # ── 相对估值修正：PE 相对行业中位PE（±7分） ──
         if ($null -ne $va.IndustryMedianPE -and [double]$va.IndustryMedianPE -gt 0 -and $null -ne $va.PE_TTM) {
             $relPE = [double]$va.PE_TTM / [double]$va.IndustryMedianPE
-            if ($relPE -lt 0.8)     { $valScore += 5 }   # 比行业便宜20%+
+            if ($relPE -lt 0.6)     { $valScore += 7 }   # 比行业便宜40%+
+            elseif ($relPE -lt 0.8) { $valScore += 5 }   # 比行业便宜20%+
+            elseif ($relPE -lt 0.9) { $valScore += 2 }   # 比行业便宜10%+
             elseif ($relPE -gt 1.3) { $valScore -= 3 }   # 比行业贵30%+
         }
 
@@ -1201,8 +1208,14 @@ foreach ($stk in $alphaStocks) {
     $stk | Add-Member -NotePropertyName IsCyclical -NotePropertyValue ([bool]$isCyclical) -Force
     $stk.Score = [Math]::Min(100, $stk.Score + $valScore)
 
-    # ── 信号类型标注 ──
-    $signalType = if (($va -and $va.CapeLevel -eq "Low") -or $relPE -lt 0.8) {
+    # ── 信号类型标注（放宽价值洼地判定：CAPE Low / 相对PE<0.8 / PE<15且盈利 / PB<1.5） ──
+    $isValueTrap = ($va -and $va.CapeLevel -eq "Low") -or $relPE -lt 0.8
+    if (-not $isValueTrap -and $null -ne $va) {
+        $peOK = $null -ne $va.PE_TTM -and [double]$va.PE_TTM -gt 0 -and [double]$va.PE_TTM -lt 15
+        $pbOK = $null -ne $va.PB -and [double]$va.PB -gt 0 -and [double]$va.PB -lt 1.5
+        if ($peOK -or $pbOK) { $isValueTrap = $true }
+    }
+    $signalType = if ($isValueTrap) {
         "价值洼地"
     } elseif ($null -ne $stk.ProfitGrowth -and [double]$stk.ProfitGrowth -gt 25 -and
               $null -ne $stk.RevGrowth -and [double]$stk.RevGrowth -gt 25) {
@@ -1210,6 +1223,14 @@ foreach ($stk in $alphaStocks) {
     } else {
         "主题热点"
     }
+
+    # ── 信号类型加分：价值洼地+8, 景气反转+5（提升基本面选股权重） ──
+    $signalBonus = switch ($signalType) {
+        "价值洼地" { 8 }
+        "景气反转" { 5 }
+        default    { 0 }
+    }
+    $stk.Score = [Math]::Min(100, $stk.Score + $signalBonus)
 
     # ── 持有时长 + 仓位建议 ──
     $holdPeriod = switch ($signalType) {
