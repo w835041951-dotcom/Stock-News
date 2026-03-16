@@ -1276,14 +1276,14 @@ function Save-RecommendationLog {
     param($Stocks, [int]$SentimentScore)
     $logFile = Join-Path $PSScriptRoot "recommendations-log.csv"
     $today = Get-Date -Format "yyyy-MM-dd"
-    # 避免同一天重复写入
+    # 避免同一天同一只股票重复写入（允许多轮追加新股票）
+    $existingCodes = @()
     if (Test-Path $logFile) {
         try {
-            $existing = Import-Csv $logFile -Encoding UTF8 | Where-Object { $_.Date -eq $today }
-            if ($existing) { return }
+            $existingCodes = @(Import-Csv $logFile -Encoding UTF8 | Where-Object { $_.Date -eq $today } | ForEach-Object { $_.Code })
         } catch {}
     }
-    $rows = @($Stocks | ForEach-Object {
+    $rows = @($Stocks | Where-Object { $_.Code -notin $existingCodes } | ForEach-Object {
         [PSCustomObject]@{
             Date         = $today
             Code         = $_.Code
@@ -1300,7 +1300,9 @@ function Save-RecommendationLog {
         }
     })
     try {
-        $rows | Export-Csv $logFile -Append -NoTypeInformation -Encoding UTF8
+        if ($rows.Count -gt 0) {
+            $rows | Export-Csv $logFile -Append -NoTypeInformation -Encoding UTF8
+        }
     } catch {}
 }
 
