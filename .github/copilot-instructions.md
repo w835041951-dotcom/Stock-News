@@ -108,6 +108,8 @@ Get-Content '...\result.json' | ConvertFrom-Json
 | "美股" / "美股行情" / "美股咋样" / "美股黄金" | `.\Get-USMarketQuote.ps1` |
 | "美股盘前" / "美股盘前有啥消息" | `.\Get-USMarketQuote.ps1` + `.\Get-MarketNews.ps1` |
 | "美股涨幅" / "美股有什么涨的好" / "US movers" | `.\Get-USStockMovers.ps1` |
+| "这些有什么关联的A股" / "美股映射" | `Get-USStockMovers` → 分析涨幅资产的A肢供应链/同业下游，给出关联映射表 |
+| "XXX 哪些在低位" / "低位筛选" | 用 `Get-StockKline` 获取120日K线，计算位置百分位（≤ 30% = 低位） |
 | "找合作股 XXX" / "关联A股 XXX" / "partner stocks XXX" | `.\Get-PartnerStocks.ps1 -Target XXX` |
 | "美股强势" / "US leaders" / "美股映射A股" | `.\Get-USStrongAStocks.ps1` |
 | "alpha" / "选股" / "信息差" / "alpha signal" | `.\Get-AlphaSignal.ps1` |
@@ -198,6 +200,8 @@ Get-Content '...\result.json' | ConvertFrom-Json
 | "美股咋样" / "美股黄金" | `Get-USMarketQuote`（三大指数+黄金白银原油） | <3s |
 | "美股盘前有啥消息" | `Get-USMarketQuote` + `Get-MarketNews`（行情+新闻） | <15s |
 | "美股涨幅" / "美股有什么涨的好" | `Get-USStockMovers`（36只热门股涨跌排行） | <5s |
+| "这些有关联的A股吗" | `Get-USStockMovers` → 按供应链/同业映射A股候选池 | <3s |
+| "哪些在低位" / "低位筛选" | 逐只 `Get-StockKline -Quiet` → 120日位置百分位（≤30% = 低位） | <10s |
 | "完整选股" | `Get-AlphaSignal`（完整编排器） | 3-6min |
 
 ---
