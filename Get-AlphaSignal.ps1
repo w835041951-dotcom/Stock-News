@@ -22,7 +22,8 @@
 param(
     [int]$TopN = 10,
     [bool]$IncludeCAPE = $true,
-    [switch]$Quiet
+    [switch]$Quiet,
+    [string]$LogFile = ""
 )
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -31,6 +32,9 @@ $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = $utf8NoBom
 $OutputEncoding           = $utf8NoBom
 $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
+if ($LogFile) {
+    try { Start-Transcript -Path $LogFile -Force | Out-Null } catch {}
+}
 
 # ── 共享库 ──
 $script:ProjectRoot = $PSScriptRoot
@@ -884,11 +888,26 @@ foreach ($stk in $candidates) {
     $url = "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=$secId&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=101&fqt=0&beg=$begDate&end=$endDate&lmt=45"
     $kline = Invoke-Api -Uri $url
     if ($kline -and $kline.data -and $kline.data.klines) {
+        # seed code 路径名称可能只是代码，用K线API返回的name补全
+        if ($kline.data.name -and ($stk.Name -eq $stk.Code -or $stk.Name -match '^\d{6}$')) {
+            $stk.Name = "$($kline.data.name)"
+        }
         $lines = @($kline.data.klines)
         $count = $lines.Count
         if ($count -ge 2) {
             $lastParts = $lines[$count - 1] -split ","
             $latestClose = [double]$lastParts[2]
+            # 盘中K线API可能不含当日bar，用实时价格覆盖以反映最新行情
+            if ($stk.Price -gt 0) { $latestClose = $stk.Price }
+            # seed code 路径 Price=0 时，用K线收盘价回填
+            if ($stk.Price -le 0 -and $latestClose -gt 0) {
+                $stk.Price = [Math]::Round($latestClose, 2)
+                # 尝试获取日涨跌
+                if ($count -ge 2) {
+                    $prevClose = [double](($lines[$count - 2] -split ",")[2])
+                    if ($prevClose -gt 0) { $stk.DayChange = [Math]::Round(($latestClose - $prevClose) / $prevClose * 100, 2) }
+                }
+            }
 
             # Week change (5 trading days back)
             $weekIdx = [Math]::Max(0, $count - 6)
@@ -1300,14 +1319,15 @@ Write-Host ("═" * $W) -ForegroundColor Cyan
 Write-Host ""
 
 if ($alphaStocks.Count -gt 0) {
-    $hdr = "    " + (PadR "代码" 10) + (PadR "名称" 10) + (PadL "价格" 9) + (PadL "周涨跌" 9) + (PadL "月涨跌" 9) + (PadL "营收增长" 10) + (PadL "净利增长" 10) + (PadL "ROE" 8) + (PadL "评分" 8) + (PadL "估值" 8) + (PadL "信号" 8) + "  板块"
+    $hdr = "    " + (PadR "代码" 10) + (PadR "名称" 10) + (PadL "价格" 9) + (PadL "日涨" 8) + (PadL "周涨跌" 9) + (PadL "月涨跌" 9) + (PadL "营收增长" 10) + (PadL "净利增长" 10) + (PadL "ROE" 8) + (PadL "评分" 8) + (PadL "估值" 8) + (PadL "信号" 8) + "  板块"
     Write-Host $hdr -ForegroundColor Cyan
-    Write-Host ("    " + ("-" * 115)) -ForegroundColor DarkGray
+    Write-Host ("    " + ("-" * 123)) -ForegroundColor DarkGray
 
     foreach ($stk in $alphaStocks) {
         $sectorStr = ($stk.Sectors | Select-Object -First 2) -join "/"
         if ($stk.Sectors.Count -gt 2) { $sectorStr += "..." }
 
+        $dayStr   = "{0:+0.00;-0.00;0.00}%" -f $stk.DayChange
         $weekStr  = "{0:N2}%" -f $stk.WeekChg
         $monthStr = "{0:N2}%" -f $stk.MonthChg
         $revStr   = "+{0:N1}%" -f $stk.RevGrowth
@@ -1322,6 +1342,7 @@ if ($alphaStocks.Count -gt 0) {
         }
         $sigStr   = if ($stk.SignalType) { $stk.SignalType } else { "" }
         $priceStr = "{0:N2}" -f $stk.Price
+        $dayColor   = if ($stk.DayChange -lt 0) { "Green" } elseif ($stk.DayChange -gt 0) { "Red" } else { "White" }
         $weekColor  = if ($stk.WeekChg -lt 0) { "Green" } else { "Red" }
         $monthColor = if ($stk.MonthChg -lt 0) { "Green" } else { "Red" }
         $scoreColor = if ($stk.Score -ge 70) { "Red" } elseif ($stk.Score -ge 50) { "Yellow" } else { "White" }
@@ -1331,6 +1352,7 @@ if ($alphaStocks.Count -gt 0) {
         Write-Host (PadR $stk.Code 10) -NoNewline -ForegroundColor White
         Write-Host (PadR $stk.Name 10) -NoNewline -ForegroundColor White
         Write-Host (PadL $priceStr 9) -NoNewline -ForegroundColor White
+        Write-Host (PadL $dayStr 8) -NoNewline -ForegroundColor $dayColor
         Write-Host (PadL $weekStr 9) -NoNewline -ForegroundColor $weekColor
         Write-Host (PadL $monthStr 9) -NoNewline -ForegroundColor $monthColor
         Write-Host (PadL $revStr 10) -NoNewline -ForegroundColor Red
@@ -1400,3 +1422,4 @@ $stageLine = ($script:StageTimers.GetEnumerator() | Where-Object { $_.Value -is 
 if ($stageLine) { Write-Host "    各步耗时: $stageLine" -ForegroundColor DarkGray }
 Write-Host "    总耗时: ${totalSec}s  |  缓存命中: $($script:DQ.CacheHits)  |  API失败: $($script:DQ.ApiFailures)  |  跳过股票: $($script:DQ.StocksSkipped)" -ForegroundColor DarkGray
 Write-Host ""
+if ($LogFile) { try { Stop-Transcript | Out-Null } catch {} }

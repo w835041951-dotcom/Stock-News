@@ -182,9 +182,10 @@ if ($Action -in "all", "price") {
         }
         $count = $lines.Count
         if ($count -ge 2) {
-            # Latest close
+            # Latest close — 盘中K线可能不含当日bar，用实时价格覆盖
             $latestParts = $lines[$count - 1] -split ","
             $latestClose = [double]$latestParts[2]
+            if ($result.Price -gt 0) { $latestClose = $result.Price }
 
             # 1-week: ~5 trading days ago
             $week1Idx = [Math]::Max(0, $count - 6)
