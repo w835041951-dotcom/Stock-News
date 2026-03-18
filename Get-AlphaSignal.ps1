@@ -881,6 +881,7 @@ if (-not $Quiet) {
 $begDate = (Get-Date).AddDays(-55).ToString("yyyyMMdd")
 $endDate = (Get-Date).ToString("yyyyMMdd")
 $decliners = @()
+$momentumCandidates = @()
 $processed = 0
 
 foreach ($stk in $candidates) {
@@ -983,6 +984,12 @@ foreach ($stk in $candidates) {
             if ($weekChg -lt 0 -or $monthChg -lt -5) {
                 $decliners += $stk
             }
+
+            # Momentum candidate: strong daily surge + volume + trend support
+            if ($stk.DayChange -gt 3 -and $stk.AboveMA20 -and $stk.HighVolume -and
+                ($null -eq $stk.RSI14 -or $stk.RSI14 -lt 80)) {
+                $momentumCandidates += $stk
+            }
         }
     }
     if (-not $Quiet -and $processed % 20 -eq 0) {
@@ -1021,7 +1028,7 @@ if (-not $Quiet) {
     }
 
     Write-Host ""
-    Write-Host "    → $($candidates.Count) 只成分股 → $($decliners.Count) 只处于回调/低位" -ForegroundColor DarkGray
+    Write-Host "    → $($candidates.Count) 只成分股 → $($decliners.Count) 只处于回调/低位 | $($momentumCandidates.Count) 只强势动量" -ForegroundColor DarkGray
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -1369,16 +1376,80 @@ foreach ($stk in @($alphaStocks)) {
 # ── 回测日志：自动保存推荐记录 ──
 Save-RecommendationLog -Stocks $alphaStocks -Source "AlphaSignal" -SentimentScore ([int][Math]::Round($sentiment.SentimentIndex))
 
+# ══════════════════════════════════════════════════════════════
+# 短线动量信号 — 评分（独立于基本面，在 Quiet return 之前完成）
+# ══════════════════════════════════════════════════════════════
+$alphaCodesSet = @{}
+foreach ($a in $alphaStocks) { $alphaCodesSet[$a.Code] = $true }
+$momentumOnly = @($momentumCandidates | Where-Object { -not $alphaCodesSet.ContainsKey($_.Code) })
+$topMomentum = @()
+
+if ($momentumOnly.Count -gt 0) {
+    foreach ($stk in $momentumOnly) {
+        $mScore = 0
+
+        # 1. 日涨幅 (0-40)
+        if ($stk.DayChange -ge 8)      { $mScore += 40 }
+        elseif ($stk.DayChange -ge 5)  { $mScore += 30 }
+        elseif ($stk.DayChange -ge 3)  { $mScore += 20 }
+
+        # 2. 放量确认 (0-20)
+        if ($stk.HighVolume) { $mScore += 20 }
+
+        # 3. 板块热度 (0-25)
+        $bestRank = 999
+        foreach ($sec in $stk.Sectors) {
+            $idx = 0
+            foreach ($s in $allSectors) {
+                $idx++
+                if ($s.Name -eq $sec -and $idx -lt $bestRank) { $bestRank = $idx }
+            }
+        }
+        if ($bestRank -le 3)       { $mScore += 25 }
+        elseif ($bestRank -le 5)   { $mScore += 15 }
+        elseif ($bestRank -le 8)   { $mScore += 10 }
+
+        # 4. 技术面 (0-15)
+        if ($stk.AboveMA20) { $mScore += 5 }
+        if ($null -ne $stk.RSI14) {
+            if ($stk.RSI14 -ge 40 -and $stk.RSI14 -le 65) { $mScore += 10 }
+            elseif ($stk.RSI14 -gt 65 -and $stk.RSI14 -le 75) { $mScore += 5 }
+        }
+
+        $stk | Add-Member -NotePropertyName MomentumScore -NotePropertyValue $mScore -Force
+        $stk | Add-Member -NotePropertyName Score         -NotePropertyValue $mScore -Force
+        $stk | Add-Member -NotePropertyName SignalType    -NotePropertyValue "短线动量"  -Force
+        $stk | Add-Member -NotePropertyName HoldPeriod    -NotePropertyValue "短线 1-2周" -Force
+        $stk | Add-Member -NotePropertyName PosSize       -NotePropertyValue "5-10%"     -Force
+        $stk | Add-Member -NotePropertyName StopLoss      -NotePropertyValue ([Math]::Round([double]$stk.Price * 0.95, 2)) -Force
+    }
+
+    $topMomentum = @($momentumOnly | Sort-Object -Property MomentumScore -Descending | Select-Object -First 5)
+
+    # 入手时间
+    if (-not $Quiet -and $topMomentum.Count -gt 0) {
+        Write-Host ""
+        Write-Host "  正在为动量股补充日内买点建议..." -ForegroundColor DarkGray
+    }
+    foreach ($stk in $topMomentum) {
+        $timing = Get-EntryTimingAdvice -Code $stk.Code
+        $stk | Add-Member -NotePropertyName EntryTiming -NotePropertyValue $timing -Force
+    }
+
+    Save-RecommendationLog -Stocks $topMomentum -Source "Momentum" -SentimentScore ([int][Math]::Round($sentiment.SentimentIndex))
+}
+
 if ($Quiet) {
     return [PSCustomObject]@{
-        Trends      = $allTrends
-        News        = $allNews
-        GapTrends   = $gapTrends
-        IntlGaps    = $intlGaps
-        AlphaStocks = $alphaStocks
-        HotSectors  = $allSectors
-        Decliners   = $decliners
-        Sentiment   = $sentiment
+        Trends         = $allTrends
+        News           = $allNews
+        GapTrends      = $gapTrends
+        IntlGaps       = $intlGaps
+        AlphaStocks    = $alphaStocks
+        MomentumStocks = $topMomentum
+        HotSectors     = $allSectors
+        Decliners      = $decliners
+        Sentiment      = $sentiment
     }
 }
 
@@ -1468,6 +1539,62 @@ else {
     Write-Host "    (条件: 热门板块成分 + 近期回调 + 营收&净利同比增长)" -ForegroundColor DarkGray
 }
 
+# ── 动量信号输出（评分已在 Quiet return 之前完成）──
+if ($topMomentum.Count -gt 0) {
+    Write-Host ""
+    Write-Host ("═" * $W) -ForegroundColor Magenta
+    Write-Host "  短线动量信号 — 板块强势股（非基本面驱动，严控仓位和止损）" -ForegroundColor Magenta
+    Write-Host "  条件: 日涨>3% + 放量 + 站上MA20 + RSI<80" -ForegroundColor DarkGray
+    Write-Host ("═" * $W) -ForegroundColor Magenta
+    Write-Host ""
+
+    $hdr = "    " + (PadR "代码" 10) + (PadR "名称" 10) + (PadL "价格" 9) + (PadL "日涨" 8) + (PadL "周涨跌" 9) + (PadL "月涨跌" 9) + (PadL "RSI14" 8) + (PadL "动量分" 8) + "  板块"
+    Write-Host $hdr -ForegroundColor DarkGray
+    Write-Host ("    " + ("-" * 80)) -ForegroundColor DarkGray
+
+    foreach ($stk in $topMomentum) {
+        $sectorStr = ($stk.Sectors | Select-Object -First 2) -join "/"
+        $dayStr   = "+{0:N2}%" -f $stk.DayChange
+        $weekStr  = "{0:N2}%" -f $stk.WeekChg
+        $monthStr = "{0:N2}%" -f $stk.MonthChg
+        $rsiStr   = if ($null -ne $stk.RSI14) { "{0:N1}" -f $stk.RSI14 } else { "N/A" }
+        $weekColor  = if ($stk.WeekChg -lt 0) { "Green" } else { "Red" }
+        $monthColor = if ($stk.MonthChg -lt 0) { "Green" } else { "Red" }
+        $mScoreColor = if ($stk.MomentumScore -ge 70) { "Red" } elseif ($stk.MomentumScore -ge 50) { "Yellow" } else { "White" }
+
+        Write-Host "    " -NoNewline
+        Write-Host (PadR $stk.Code 10) -NoNewline -ForegroundColor White
+        Write-Host (PadR $stk.Name 10) -NoNewline -ForegroundColor White
+        Write-Host (PadL ("{0:N2}" -f $stk.Price) 9) -NoNewline -ForegroundColor White
+        Write-Host (PadL $dayStr 8) -NoNewline -ForegroundColor Red
+        Write-Host (PadL $weekStr 9) -NoNewline -ForegroundColor $weekColor
+        Write-Host (PadL $monthStr 9) -NoNewline -ForegroundColor $monthColor
+        Write-Host (PadL $rsiStr 8) -NoNewline -ForegroundColor Yellow
+        Write-Host (PadL "$($stk.MomentumScore)" 8) -NoNewline -ForegroundColor $mScoreColor
+        Write-Host "  $sectorStr" -ForegroundColor DarkGray
+    }
+
+    Write-Host ""
+    Write-Host "  动量入手建议（严控风险：-5%止损）" -ForegroundColor Magenta
+    Write-Host ""
+    foreach ($stk in $topMomentum) {
+        $stopStr = "止损: $($stk.StopLoss)(-5%)"
+        $posStr  = "仓位: $($stk.PosSize)"
+        $holdStr = "持有: $($stk.HoldPeriod)"
+
+        if ($stk.EntryTiming) {
+            $timing = $stk.EntryTiming
+            Write-Host ("    {0} {1}  [短线动量]" -f $stk.Code, $stk.Name) -ForegroundColor Magenta
+            Write-Host ("      买点: {0}  备选: {1}  [{2}]" -f $timing.PrimaryWindow, $timing.SecondaryWindow, $timing.FundFlowBias) -ForegroundColor White
+            Write-Host ("      操作: {0}；{1}" -f $timing.Action, $timing.Reason) -ForegroundColor DarkGray
+            Write-Host ("      $stopStr  $posStr  $holdStr") -ForegroundColor DarkCyan
+        } else {
+            Write-Host ("    {0} {1}  [短线动量]  $stopStr  $posStr  $holdStr" -f $stk.Code, $stk.Name) -ForegroundColor DarkGray
+        }
+        Write-Host ""
+    }
+}
+
 End-Stage "S6_评分"
 
 # ── Footer ──
@@ -1475,6 +1602,7 @@ Write-Host ""
 Write-Host ("─" * $W) -ForegroundColor DarkGray
 Write-Host "  筛选漏斗:" -ForegroundColor DarkGray
 Write-Host "    热门板块 $($allSectors.Count) → 成分股 $($candidates.Count) → 回调/低位 $($decliners.Count) → 财报增长+≥55分 $($alphaStocks.Count)" -ForegroundColor DarkGray
+Write-Host "    动量通道: 日涨>3%+放量+MA20 $($momentumCandidates.Count) → 去重排序 → TOP $($topMomentum.Count)" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  情绪指数: $($sentiment.SentimentIndex)/10  多头$($sentiment.BullCount) | 空头$($sentiment.BearCount) | 中性$($sentiment.NeutralCount)" -ForegroundColor DarkGray
 Write-Host "  信息差: 未报道 $($gapTrends.Count) 条 | 已报道 $($coveredTrends.Count) 条 | 国际 $($intlGaps.Count) 条" -ForegroundColor DarkGray
@@ -1482,6 +1610,7 @@ Write-Host "  回调条件: 近一周下跌 或 近一月跌幅>5%" -ForegroundC
 Write-Host "  评分 = 基本面(0-40,含PEG+趋势) + 技术(-10~30,含RSI过热/追高/破位惩罚) + 估值(-10~30,含极端PE/PB惩罚), 满分100" -ForegroundColor DarkGray
 Write-Host "  信号类型: 价值洼地(+8) | 景气反转(+5) | 主题热点(-3); 换手率>15%再-5; 最低55分门槛" -ForegroundColor DarkGray
 Write-Host "  止损参考: 当前价×92%；推荐记录已保存至 recommendations-log.csv" -ForegroundColor DarkGray
+Write-Host "  动量评分: 日涨(0-40) + 放量(0-20) + 板块热度(0-25) + 技术(0-15), 满分100; 止损×95%(-5%)" -ForegroundColor DarkGray
 Write-Host "  买点建议 = 分时相对均价线 + 主力资金分钟级净流向 + 当日阶段节奏" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  * 数据来源: 百度/头条/Google Trends/新浪财经/东方财富/雪球/36Kr/同花顺" -ForegroundColor DarkGray
