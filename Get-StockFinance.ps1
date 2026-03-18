@@ -38,11 +38,11 @@ foreach ($r in $items) {
     $reports += [PSCustomObject]@{
         ReportName  = "$($r.REPORT_DATE_NAME)"
         ReportDate  = "$($r.REPORT_DATE)"
-        Revenue     = $r.TOTAL_OPERATE_INCOME
-        RevenueYoY  = $r.YSTZ                         # 营收同比增长率
-        NetProfit   = $r.PARENT_NETPROFIT
-        ProfitYoY   = $r.SJLTZ                        # 净利润同比增长率
-        EPS         = $r.BASIC_EPS
+        Revenue     = $r.TOTALOPERATEREVE
+        RevenueYoY  = $r.TOTALOPERATEREVETZ            # 营收同比增长率
+        NetProfit   = $r.PARENTNETPROFIT
+        ProfitYoY   = $r.PARENTNETPROFITTZ             # 净利润同比增长率
+        EPS         = $r.EPSJB
         BPS         = $r.BPS
         GrossMargin = $r.XSMLL                         # 毛利率
         NetMargin   = $r.XSJLL                         # 净利率
