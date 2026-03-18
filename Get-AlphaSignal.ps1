@@ -96,28 +96,32 @@ function Set-CachedData {
 
 # ── Helpers ──────────────────────────────────────────────────
 function Invoke-Api {
-    param([string]$Uri, [string]$Referer = "https://quote.eastmoney.com/")
-    try {
-        $resp = Invoke-RestMethod -Uri $Uri -Headers @{
-            "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            "Referer"    = $Referer
-        } -TimeoutSec 15
-        return $resp
-    } catch {
-        return $null
+    param([string]$Uri, [string]$Referer = "https://quote.eastmoney.com/", [int]$Retries = 2)
+    for ($attempt = 1; $attempt -le $Retries; $attempt++) {
+        try {
+            $resp = Invoke-RestMethod -Uri $Uri -Headers @{
+                "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                "Referer"    = $Referer
+            } -TimeoutSec 15
+            if ($null -ne $resp) { return $resp }
+        } catch {}
+        if ($attempt -lt $Retries) { Start-Sleep -Milliseconds (500 * $attempt) }
     }
+    return $null
 }
 
 function Invoke-XmlApi {
-    param([string]$Uri)
-    try {
-        $resp = Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 15 -Headers @{
-            "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        return [xml]$resp.Content
-    } catch {
-        return $null
+    param([string]$Uri, [int]$Retries = 2)
+    for ($attempt = 1; $attempt -le $Retries; $attempt++) {
+        try {
+            $resp = Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 15 -Headers @{
+                "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            if ($resp -and $resp.Content) { return [xml]$resp.Content }
+        } catch {}
+        if ($attempt -lt $Retries) { Start-Sleep -Milliseconds (500 * $attempt) }
     }
+    return $null
 }
 
 # CJK-aware string padding
@@ -638,6 +642,11 @@ function Get-TopSectors {
     $fetchSize = $Count + 20
     $url = "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=$fetchSize&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f3&fs=$fs&fields=f2,f3,f4,f12,f14"
     $resp = Invoke-Api -Uri $url
+    # 备源：换 ut + fid=f62 资金流排序
+    if (-not ($resp -and $resp.data -and $resp.data.diff)) {
+        $url2 = "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=$fetchSize&po=1&np=1&ut=7eea3edcaed734bea9cbfc24409ed989&fltt=2&invt=2&fid=f62&fs=$fs&fields=f2,f3,f4,f12,f14"
+        $resp = Invoke-Api -Uri $url2
+    }
     $results = @()
     if ($resp -and $resp.data -and $resp.data.diff) {
         foreach ($item in $resp.data.diff) {
@@ -650,6 +659,39 @@ function Get-TopSectors {
                 Code   = "$($item.f12)"
                 Name   = $name
                 Change = [Math]::Round([double]$item.f3, 2)
+            }
+            if ($results.Count -ge $Count) { break }
+        }
+    }
+    return $results
+}
+
+# 近5日领涨但今日回调的板块（捕捉热门板块回调抄底机会）
+function Get-PullbackSectors {
+    param([string]$FsType, [int]$Count = 4)
+    $fs = if ($FsType -eq "industry") { "m:90+t:2" } else { "m:90+t:3" }
+    # f104=5日涨跌 f3=今日涨跌
+    $url = "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=30&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f104&fs=$fs&fields=f2,f3,f12,f14,f104,f105"
+    $resp = Invoke-Api -Uri $url
+    $results = @()
+    if ($resp -and $resp.data -and $resp.data.diff) {
+        foreach ($item in $resp.data.diff) {
+            $name = "$($item.f14)"
+            $isNoise = $false
+            foreach ($p in $noisePatterns) { if ($name -like "*$p*") { $isNoise = $true; break } }
+            if ($isNoise) { continue }
+            $day5 = 0.0; $today = 0.0
+            [void][double]::TryParse("$($item.f104)", [ref]$day5)
+            [void][double]::TryParse("$($item.f3)", [ref]$today)
+            # 5日涨幅>5%，但今日回调（≤0%）→ 热门板块回调
+            if ($day5 -gt 5 -and $today -le 0) {
+                $results += [PSCustomObject]@{
+                    Code       = "$($item.f12)"
+                    Name       = $name
+                    Change     = [Math]::Round($today, 2)
+                    Day5Change = [Math]::Round($day5, 2)
+                    IsPullback = $true
+                }
             }
             if ($results.Count -ge $Count) { break }
         }
@@ -737,7 +779,15 @@ if ($hotIndustry.Count -eq 0 -and $hotConcept.Count -eq 0) {
     $hotConcept  = @($predicted | Where-Object { $_.Kind -eq 'concept' } | Select-Object -First 6)
 }
 
-$allSectors  = @($hotIndustry) + @($hotConcept)
+# 近5日热门但今日回调的板块（补充扫描池）
+$pullbackIndustry = @(Get-PullbackSectors -FsType "industry" -Count 3)
+$pullbackConcept  = @(Get-PullbackSectors -FsType "concept" -Count 3)
+# 去重：排除已在今日Top中的板块
+$topCodes = @(($hotIndustry + $hotConcept) | ForEach-Object { $_.Code })
+$pullbackIndustry = @($pullbackIndustry | Where-Object { $_.Code -notin $topCodes })
+$pullbackConcept  = @($pullbackConcept  | Where-Object { $_.Code -notin $topCodes })
+
+$allSectors  = @($hotIndustry) + @($hotConcept) + @($pullbackIndustry) + @($pullbackConcept)
 
 # Display sectors immediately
 if (-not $Quiet) {
@@ -779,6 +829,19 @@ if (-not $Quiet) {
             Write-Host (PadR $s.Name 16) -NoNewline -ForegroundColor White
             Write-Host (PadL "+$($s.Change)%" 8) -NoNewline -ForegroundColor Red
             Write-Host "  $bar" -ForegroundColor Red
+        }
+    }
+
+    # 回调板块显示
+    $pbAll = @($pullbackIndustry) + @($pullbackConcept)
+    if ($pbAll.Count -gt 0) {
+        Write-Host ""
+        Write-Host "  近5日热门→今日回调（补充扫描）:" -ForegroundColor Magenta
+        foreach ($s in $pbAll) {
+            Write-Host "    " -NoNewline
+            Write-Host (PadR $s.Name 16) -NoNewline -ForegroundColor White
+            Write-Host (PadL "$($s.Change)%" 8) -NoNewline -ForegroundColor Green
+            Write-Host "  5日:+$($s.Day5Change)%" -ForegroundColor Yellow
         }
     }
 }

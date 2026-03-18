@@ -1,10 +1,24 @@
 import json
 import math
 import sys
+import time
 from datetime import datetime, timedelta
 
 import akshare as ak
 import pandas as pd
+
+
+def retry(fn, retries=3, delay=1.0):
+    """Retry a callable up to `retries` times with exponential backoff."""
+    last_err = None
+    for i in range(retries):
+        try:
+            return fn()
+        except Exception as e:
+            last_err = e
+            if i < retries - 1:
+                time.sleep(delay * (i + 1))
+    raise last_err
 
 
 CERTIFICATES = [
@@ -29,7 +43,7 @@ def safe_float(value):
 
 
 def get_eps_series(code: str, years: int):
-    df = ak.stock_financial_abstract_ths(symbol=code, indicator="按年度")
+    df = retry(lambda: ak.stock_financial_abstract_ths(symbol=code, indicator="按年度"))
     year_col = "报告期"
     eps_col = "基本每股收益"
     if year_col not in df.columns or eps_col not in df.columns:
@@ -52,7 +66,7 @@ def get_eps_series(code: str, years: int):
 
 def get_dividend_info(code: str, price: float):
     try:
-        df = ak.stock_dividend_cninfo(symbol=code)
+        df = retry(lambda: ak.stock_dividend_cninfo(symbol=code))
     except Exception:
         return {
             "DividendPerShareTTM": None,
@@ -123,7 +137,7 @@ def get_dividend_info(code: str, price: float):
 
 def get_industry_info(code: str):
     try:
-        df = ak.stock_industry_change_cninfo(symbol=code)
+        df = retry(lambda: ak.stock_industry_change_cninfo(symbol=code))
     except Exception:
         return {
             "IndustryName": None,
@@ -191,7 +205,7 @@ def get_industry_info(code: str):
     for offset in range(0, 10):
         qdate = (today - timedelta(days=offset)).strftime("%Y%m%d")
         try:
-            pe_df = ak.stock_industry_pe_ratio_cninfo(symbol="证监会行业分类", date=qdate)
+            pe_df = retry(lambda qd=qdate: ak.stock_industry_pe_ratio_cninfo(symbol="证监会行业分类", date=qd))
             if pe_df is None or pe_df.empty:
                 continue
             match = pe_df[pe_df["行业名称"] == industry_name]
@@ -220,7 +234,7 @@ def get_industry_info(code: str):
 
 def get_historical_cape_info(code: str, eps_series, current_cape: float, years: int):
     try:
-        df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date="19900101", end_date="20500101", adjust="")
+        df = retry(lambda: ak.stock_zh_a_hist(symbol=code, period="daily", start_date="19900101", end_date="20500101", adjust=""))
     except Exception:
         return {
             "HistoricalCapePercentile": None,

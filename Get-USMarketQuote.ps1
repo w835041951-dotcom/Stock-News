@@ -15,16 +15,84 @@ $ErrorActionPreference = "SilentlyContinue"
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = $utf8NoBom
 
-# --- 新浪财经美股指数 + 期货接口 ---
+# --- 新浪财经美股指数 + 期货接口（主源，带重试） ---
 $symbols = 'hf_GC,hf_SI,hf_CL,gb_$dji,gb_$ixic,gb_$inx'
 $url = "https://hq.sinajs.cn/list=$symbols"
-try {
-    $resp = Invoke-WebRequest -Uri $url -Headers @{
-        'User-Agent' = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        'Referer'    = 'https://finance.sina.com.cn'
-    } -TimeoutSec 15
-} catch {
-    Write-Host "  [ERROR] 新浪行情接口请求失败: $($_.Exception.Message)" -ForegroundColor Red
+$resp = $null
+for ($attempt = 1; $attempt -le 2; $attempt++) {
+    try {
+        $resp = Invoke-WebRequest -Uri $url -Headers @{
+            'User-Agent' = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'Referer'    = 'https://finance.sina.com.cn'
+        } -TimeoutSec 15
+        if ($resp -and $resp.Content -and $resp.Content.Length -gt 30) { break }
+        $resp = $null
+    } catch {
+        $resp = $null
+    }
+    if ($attempt -lt 2) { Start-Sleep -Milliseconds 800 }
+}
+
+if (-not $resp) {
+    # ── 备源：东方财富美股指数 ──
+    # 道琼斯=100.DJIA 纳斯达克=100.NDX 标普500=100.SPX
+    $emSymbols = @(
+        @{ SecId = "100.DJIA";  Name = '道琼斯';  Order = 1 }
+        @{ SecId = "100.NDX";   Name = '纳斯达克'; Order = 2 }
+        @{ SecId = "100.SPX";   Name = '标普500';  Order = 3 }
+    )
+    $results = @()
+    foreach ($s in $emSymbols) {
+        $emUrl = "https://push2.eastmoney.com/api/qt/stock/get?secid=$($s.SecId)&fields=f43,f44,f45,f46,f57,f58,f169,f170,f60"
+        try {
+            $emResp = Invoke-RestMethod -Uri $emUrl -TimeoutSec 10 -Headers @{
+                "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                "Referer"    = "https://quote.eastmoney.com/"
+            }
+            if ($emResp -and $emResp.data) {
+                $d = $emResp.data
+                $price     = [double]$d.f43 / 100
+                $prevClose = [double]$d.f60 / 100
+                $change    = [double]$d.f169 / 100
+                $changePct = [double]$d.f170 / 100
+                $results += [PSCustomObject]@{
+                    Name      = $s.Name
+                    Symbol    = $s.SecId
+                    Price     = [math]::Round($price, 2)
+                    Change    = [math]::Round($change, 2)
+                    ChangePct = [math]::Round($changePct, 2)
+                    DayHigh   = [math]::Round([double]$d.f44 / 100, 2)
+                    DayLow    = [math]::Round([double]$d.f45 / 100, 2)
+                    PrevClose = [math]::Round($prevClose, 2)
+                    Order     = $s.Order
+                }
+            }
+        } catch {}
+    }
+
+    # 黄金白银原油暂无东财备源，标注来源
+    if ($results.Count -gt 0) {
+        if (-not $Quiet) { Write-Host "  [东财备源] 仅指数数据，大宗商品跳过" -ForegroundColor Yellow }
+        if ($Quiet) { return $results }
+
+        Write-Host ""
+        Write-Host "  === 美股指数 (东财备源) ===" -ForegroundColor Cyan
+        Write-Host ""
+        foreach ($r in $results | Sort-Object Order) {
+            $sign  = if ($r.Change -ge 0) { '+' } else { '' }
+            $color = if ($r.Change -ge 0) { 'Green' } else { 'Red' }
+            $priceStr  = '{0,12:N2}' -f $r.Price
+            $changeStr = '{0}{1:N2}' -f $sign, $r.Change
+            $pctStr    = '{0}{1:N2}%' -f $sign, $r.ChangePct
+            Write-Host ("  {0,-10} " -f $r.Name) -NoNewline
+            Write-Host $priceStr -ForegroundColor $color -NoNewline
+            Write-Host ("  {0,10}  {1,8}" -f $changeStr, $pctStr) -ForegroundColor $color
+        }
+        Write-Host ""
+        return
+    }
+
+    Write-Host "  [ERROR] 美股行情获取失败（新浪+东财均失败）" -ForegroundColor Red
     return
 }
 

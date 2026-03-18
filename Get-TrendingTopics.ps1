@@ -52,16 +52,18 @@ function Invoke-WebRequest2 {
         [int]$TimeoutSec = 15,
         [string]$ContentType = "application/json"
     )
-    try {
-        $headers = @{
-            "User-Agent" = $UserAgent
-            "Accept"     = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-        }
-        $resp = Invoke-RestMethod -Uri $Url -Headers $headers -TimeoutSec $TimeoutSec
-        return $resp
-    } catch {
-        return $null
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        try {
+            $headers = @{
+                "User-Agent" = $UserAgent
+                "Accept"     = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            }
+            $resp = Invoke-RestMethod -Uri $Url -Headers $headers -TimeoutSec $TimeoutSec
+            if ($null -ne $resp) { return $resp }
+        } catch {}
+        if ($attempt -lt 2) { Start-Sleep -Milliseconds 800 }
     }
+    return $null
 }
 
 function Invoke-XmlRequest {
@@ -69,20 +71,20 @@ function Invoke-XmlRequest {
         [string]$Url,
         [int]$TimeoutSec = 15
     )
-    try {
-        $headers = @{
-            "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            "Accept"     = "application/xml, text/xml, */*"
-        }
-        # Invoke-WebRequest to get raw content, then parse as XML
-        $resp = Invoke-WebRequest -Uri $Url -Headers $headers -TimeoutSec $TimeoutSec -UseBasicParsing
-        $content = $resp.Content
-        # Parse XML
-        $xml = [xml]$content
-        return $xml
-    } catch {
-        return $null
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        try {
+            $headers = @{
+                "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                "Accept"     = "application/xml, text/xml, */*"
+            }
+            $resp = Invoke-WebRequest -Uri $Url -Headers $headers -TimeoutSec $TimeoutSec -UseBasicParsing
+            $content = $resp.Content
+            $xml = [xml]$content
+            return $xml
+        } catch {}
+        if ($attempt -lt 2) { Start-Sleep -Milliseconds 800 }
     }
+    return $null
 }
 
 # ============================================================

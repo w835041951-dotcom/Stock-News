@@ -5,11 +5,25 @@ Helper: fetch long-history annual EPS for an A-share via akshare.
 Usage: python Get-EpsSeries.py <code_6digit> [years]
 Output: JSON array [{"Year":2024,"EPS":0.35}, ...]  sorted descending
 """
-import sys, json
+import sys, json, time
 sys.stdout.reconfigure(encoding='utf-8')
 
 import akshare as ak
 import pandas as pd
+
+
+def retry(fn, retries=3, delay=1.0):
+    """Retry a callable up to `retries` times with exponential backoff."""
+    last_err = None
+    for i in range(retries):
+        try:
+            return fn()
+        except Exception as e:
+            last_err = e
+            if i < retries - 1:
+                time.sleep(delay * (i + 1))
+    raise last_err
+
 
 def main():
     if len(sys.argv) < 2:
@@ -20,7 +34,7 @@ def main():
     years = int(sys.argv[2]) if len(sys.argv) >= 3 else 10
 
     try:
-        df = ak.stock_financial_abstract_ths(symbol=code, indicator="按年度")
+        df = retry(lambda: ak.stock_financial_abstract_ths(symbol=code, indicator="按年度"))
     except Exception as e:
         print(json.dumps({"error": str(e)}))
         sys.exit(1)

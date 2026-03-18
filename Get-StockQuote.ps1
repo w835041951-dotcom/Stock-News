@@ -27,8 +27,83 @@ $id = Resolve-StockCode -InputCode $Code
 $url = "https://push2.eastmoney.com/api/qt/stock/get?secid=$($id.SecId)&fields=f43,f44,f45,f46,f57,f58,f59,f60,f168,f169,f170,f47,f48,f164,f167&ut=fa5fd1943c7b386f172d6893dbfba10b"
 $resp = Invoke-StockApi -Uri $url
 
+# 东方财富失败 → 新浪接口兜底
 if (-not ($resp -and $resp.data)) {
-    if (-not $Quiet) { Write-Warning "无法获取 $Code 行情" }
+    $sinaSym = if ($id.Prefix -eq "SH") { "sh$($id.Code)" } else { "sz$($id.Code)" }
+    $sinaData = Invoke-SinaQuote -SymbolList $sinaSym
+    if ($sinaData -and $sinaData -match '"([^"]+)"') {
+        $fields = $Matches[1] -split ','
+        if ($fields.Count -ge 32) {
+            $result = [PSCustomObject]@{
+                Code         = $id.Code
+                Name         = $fields[0].Trim()
+                Market       = $id.Prefix
+                Price        = [Math]::Round([double]$fields[3], 2)
+                Open         = [Math]::Round([double]$fields[1], 2)
+                High         = [Math]::Round([double]$fields[4], 2)
+                Low          = [Math]::Round([double]$fields[5], 2)
+                PrevClose    = [Math]::Round([double]$fields[2], 2)
+                Change       = [Math]::Round([double]$fields[3] - [double]$fields[2], 2)
+                ChangePct    = if ([double]$fields[2] -gt 0) { [Math]::Round(([double]$fields[3] - [double]$fields[2]) / [double]$fields[2] * 100, 2) } else { 0 }
+                Volume       = [double]$fields[8]
+                Amount       = [double]$fields[9]
+                TurnoverRate = $null
+                PE_TTM       = $null
+                PB           = $null
+            }
+            if (-not $Quiet) {
+                $chgStr = if ($result.ChangePct -gt 0) { "+$($result.ChangePct)%" } else { "$($result.ChangePct)%" }
+                $color  = if ($result.ChangePct -gt 0) { "Red" } elseif ($result.ChangePct -lt 0) { "Green" } else { "White" }
+                Write-Host ""
+                Write-Host "  $($result.Name) ($($result.Code).$($result.Market)) [新浪]" -ForegroundColor Cyan
+                Write-Host "  价格: " -NoNewline; Write-Host "$($result.Price)" -NoNewline -ForegroundColor $color
+                Write-Host "  涨跌: " -NoNewline; Write-Host "$chgStr" -ForegroundColor $color
+                Write-Host "  开: $($result.Open)  高: $($result.High)  低: $($result.Low)  昨收: $($result.PrevClose)"
+                Write-Host "  成交额: $(Format-LargeNumber $result.Amount)"
+                Write-Host ""
+            }
+            return $result
+        }
+    }
+    # 新浪也失败 → 腾讯行情兜底
+    $qqSym = if ($id.Prefix -eq "SH") { "sh$($id.Code)" } else { "sz$($id.Code)" }
+    $qqData = Invoke-TencentQuote -SymbolList $qqSym
+    if ($qqData -and $qqData -match '"([^"]+)"') {
+        $fields = $Matches[1] -split '~'
+        if ($fields.Count -ge 45) {
+            $result = [PSCustomObject]@{
+                Code         = $id.Code
+                Name         = $fields[1].Trim()
+                Market       = $id.Prefix
+                Price        = [Math]::Round([double]$fields[3], 2)
+                Open         = [Math]::Round([double]$fields[5], 2)
+                High         = [Math]::Round([double]$fields[33], 2)
+                Low          = [Math]::Round([double]$fields[34], 2)
+                PrevClose    = [Math]::Round([double]$fields[4], 2)
+                Change       = [Math]::Round([double]$fields[31], 2)
+                ChangePct    = [Math]::Round([double]$fields[32], 2)
+                Volume       = [double]$fields[6]
+                Amount       = [double]$fields[37]
+                TurnoverRate = if ($fields[38]) { [double]$fields[38] } else { $null }
+                PE_TTM       = if ($fields[39]) { [double]$fields[39] } else { $null }
+                PB           = if ($fields[46] -and [double]$fields[46] -ne 0) { [double]$fields[46] } else { $null }
+            }
+            if (-not $Quiet) {
+                $chgStr = if ($result.ChangePct -gt 0) { "+$($result.ChangePct)%" } else { "$($result.ChangePct)%" }
+                $color  = if ($result.ChangePct -gt 0) { "Red" } elseif ($result.ChangePct -lt 0) { "Green" } else { "White" }
+                Write-Host ""
+                Write-Host "  $($result.Name) ($($result.Code).$($result.Market)) [腾讯]" -ForegroundColor Cyan
+                Write-Host "  价格: " -NoNewline; Write-Host "$($result.Price)" -NoNewline -ForegroundColor $color
+                Write-Host "  涨跌: " -NoNewline; Write-Host "$chgStr" -ForegroundColor $color
+                Write-Host "  开: $($result.Open)  高: $($result.High)  低: $($result.Low)  昨收: $($result.PrevClose)"
+                Write-Host "  成交额: $(Format-LargeNumber $result.Amount)"
+                if ($result.PE_TTM) { Write-Host "  PE(TTM): $($result.PE_TTM)  PB: $($result.PB)" }
+                Write-Host ""
+            }
+            return $result
+        }
+    }
+    if (-not $Quiet) { Write-Warning "三个行情源均失败 ($Code)" }
     return $null
 }
 

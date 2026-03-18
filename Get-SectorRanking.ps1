@@ -30,8 +30,17 @@ function Get-Sectors {
     param([string]$FsType, [int]$Count)
     $fs = if ($FsType -eq "industry") { "m:90+t:2" } else { "m:90+t:3" }
     $fetchSize = $Count + 20
+
+    # 主：按涨跌幅排序
     $url = "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=$fetchSize&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f3&fs=$fs&fields=f2,f3,f4,f12,f14"
     $resp = Invoke-StockApi -Uri $url
+
+    # 备：换域名 push2ex + 资金流排序
+    if (-not ($resp -and $resp.data -and $resp.data.diff)) {
+        $url2 = "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=$fetchSize&po=1&np=1&ut=fa5fd1943c7b386f172d6893dbfba10b&fltt=2&invt=2&fid=f62&fs=$fs&fields=f2,f3,f4,f12,f14,f62"
+        $resp = Invoke-StockApi -Uri $url2
+    }
+
     $results = @()
     if ($resp -and $resp.data -and $resp.data.diff) {
         $idx = 1

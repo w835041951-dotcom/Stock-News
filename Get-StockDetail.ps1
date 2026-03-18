@@ -44,16 +44,17 @@ $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
 
 function Invoke-WebRequest2 {
     param([string]$Uri)
-    try {
-        $resp = Invoke-RestMethod -Uri $Uri -Headers @{
-            "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            "Referer"    = "https://quote.eastmoney.com/"
-        } -TimeoutSec 15
-        return $resp
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+        try {
+            $resp = Invoke-RestMethod -Uri $Uri -Headers @{
+                "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                "Referer"    = "https://quote.eastmoney.com/"
+            } -TimeoutSec 15
+            if ($null -ne $resp) { return $resp }
+        } catch {}
+        if ($attempt -lt 2) { Start-Sleep -Milliseconds 800 }
     }
-    catch {
-        return $null
-    }
+    return $null
 }
 
 function Format-LargeNumber {

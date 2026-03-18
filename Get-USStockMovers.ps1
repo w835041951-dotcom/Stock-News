@@ -32,17 +32,25 @@ $stocks = @(
 $symbolList = ($stocks | ForEach-Object { "gb_$($_.ToLower())" }) -join ','
 $url = "https://hq.sinajs.cn/list=$symbolList"
 
-try {
-    $resp = Invoke-WebRequest -Uri $url -Headers @{
-        'User-Agent' = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        'Referer'    = 'https://finance.sina.com.cn'
-    } -TimeoutSec 15
-} catch {
-    Write-Host "  [ERROR] 新浪美股接口请求失败: $($_.Exception.Message)" -ForegroundColor Red
-    return
+$resp = $null
+for ($attempt = 1; $attempt -le 2; $attempt++) {
+    try {
+        $resp = Invoke-WebRequest -Uri $url -Headers @{
+            'User-Agent' = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'Referer'    = 'https://finance.sina.com.cn'
+        } -TimeoutSec 15
+        if ($resp -and $resp.Content -and $resp.Content.Length -gt 50) { break }
+        $resp = $null
+    } catch {
+        $resp = $null
+    }
+    if ($attempt -lt 2) { Start-Sleep -Milliseconds 800 }
 }
 
-$lines = $resp.Content -split "`n" | Where-Object { $_ -match 'hq_str' -and $_ -notmatch '=""' }
+$lines = @()
+if ($resp) {
+    $lines = $resp.Content -split "`n" | Where-Object { $_ -match 'hq_str' -and $_ -notmatch '=""' }
+}
 
 # 新浪美股格式: 名称,价格,涨跌幅%,时间,涨跌额,开盘,最高,最低,...
 $results = @()
@@ -62,6 +70,44 @@ foreach ($line in $lines) {
             }
         }
         $idx++
+    }
+}
+
+# ── 备源：东方财富美股个股 ──
+if ($results.Count -eq 0) {
+    # 用东财 secid 105/106 前缀获取美股
+    $emMap = @{
+        'AAPL'='105.AAPL';  'MSFT'='105.MSFT';  'GOOGL'='105.GOOGL'; 'AMZN'='105.AMZN'
+        'NVDA'='105.NVDA';  'META'='105.META';   'TSLA'='105.TSLA';  'AMD'='105.AMD'
+        'NFLX'='105.NFLX';  'AVGO'='105.AVGO';   'CRM'='105.CRM';   'ORCL'='105.ORCL'
+        'INTC'='105.INTC';  'QCOM'='105.QCOM';   'MU'='105.MU'
+        'JPM'='106.JPM';    'GS'='106.GS';       'BAC'='106.BAC';    'V'='106.V';   'MA'='106.MA'
+        'XOM'='106.XOM';    'CVX'='106.CVX';      'OXY'='106.OXY';   'SLB'='106.SLB';  'HAL'='106.HAL'
+        'LMT'='106.LMT';   'RTX'='106.RTX';      'NOC'='106.NOC';   'GD'='106.GD';    'BA'='106.BA'
+        'BABA'='105.BABA';  'JD'='105.JD';        'PDD'='105.PDD';   'NIO'='105.NIO';  'XPEV'='105.XPEV'; 'LI'='105.LI'
+    }
+    foreach ($sym in $stocks) {
+        $secid = $emMap[$sym]
+        if (-not $secid) { continue }
+        $emUrl = "https://push2.eastmoney.com/api/qt/stock/get?secid=$secid&fields=f43,f57,f58,f169,f170,f60"
+        try {
+            $emResp = Invoke-RestMethod -Uri $emUrl -TimeoutSec 8 -Headers @{
+                "User-Agent" = "Mozilla/5.0"; "Referer" = "https://quote.eastmoney.com/"
+            }
+            if ($emResp -and $emResp.data -and $emResp.data.f43 -and [double]$emResp.data.f43 -gt 0) {
+                $d = $emResp.data
+                $results += [PSCustomObject]@{
+                    Symbol    = $sym
+                    Name      = "$($d.f58)"
+                    Price     = [math]::Round([double]$d.f43 / 100, 2)
+                    Change    = [math]::Round([double]$d.f169 / 100, 2)
+                    ChangePct = [math]::Round([double]$d.f170 / 100, 2)
+                }
+            }
+        } catch {}
+    }
+    if ($results.Count -gt 0 -and -not $Quiet) {
+        Write-Host "  [东财备源]" -ForegroundColor Yellow
     }
 }
 

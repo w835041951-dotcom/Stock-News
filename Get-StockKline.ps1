@@ -32,24 +32,56 @@ $end = (Get-Date).ToString("yyyyMMdd")
 $url = "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=$($id.SecId)&klt=101&fqt=1&beg=$beg&end=$end&lmt=$Days&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57"
 $resp = Invoke-StockApi -Uri $url -Referer "https://quote.eastmoney.com/"
 
-if (-not ($resp -and $resp.data -and $resp.data.klines)) {
-    if (-not $Quiet) { Write-Warning "无法获取 $Code K线数据" }
-    return $null
+$name   = $null
+$klines = @()
+
+if ($resp -and $resp.data -and $resp.data.klines) {
+    # ── 主源：东方财富 ──
+    $name = "$($resp.data.name)"
+    foreach ($line in $resp.data.klines) {
+        $parts = $line -split ','
+        $klines += [PSCustomObject]@{
+            Date   = $parts[0]
+            Open   = [double]$parts[1]
+            Close  = [double]$parts[2]
+            High   = [double]$parts[3]
+            Low    = [double]$parts[4]
+            Volume = [double]$parts[5]
+            Amount = [double]$parts[6]
+        }
+    }
+} else {
+    # ── 备源：腾讯日K ──
+    $tcSym = if ($id.Prefix -eq 'SH') { "sh$($id.Code)" } else { "sz$($id.Code)" }
+    $tcUrl = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=$tcSym,day,,,$Days,qfq"
+    try {
+        $tcResp = Invoke-RestMethod -Uri $tcUrl -TimeoutSec 15 -Headers @{
+            "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "Referer"    = "https://stockapp.finance.qq.com"
+        }
+        $tcData = $tcResp.data.$tcSym
+        $dayKey = if ($tcData.qfqday) { 'qfqday' } elseif ($tcData.day) { 'day' } else { $null }
+        if ($dayKey -and $tcData.$dayKey.Count -gt 0) {
+            $name = "$tcSym"
+            foreach ($row in $tcData.$dayKey) {
+                $klines += [PSCustomObject]@{
+                    Date   = "$($row[0])"
+                    Open   = [double]$row[1]
+                    Close  = [double]$row[2]
+                    High   = [double]$row[3]
+                    Low    = [double]$row[4]
+                    Volume = [double]$row[5]
+                    Amount = 0
+                }
+            }
+            if (-not $Quiet) { Write-Host "  [腾讯备源] " -ForegroundColor Yellow -NoNewline }
+        }
+    } catch {}
 }
 
-$name   = "$($resp.data.name)"
-$klines = @()
-foreach ($line in $resp.data.klines) {
-    $parts = $line -split ','
-    $klines += [PSCustomObject]@{
-        Date   = $parts[0]
-        Open   = [double]$parts[1]
-        Close  = [double]$parts[2]
-        High   = [double]$parts[3]
-        Low    = [double]$parts[4]
-        Volume = [double]$parts[5]
-        Amount = [double]$parts[6]
-    }
+if ($klines.Count -eq 0) {
+    if (-not $Quiet) { Write-Warning "无法获取 $Code K线数据（东财+腾讯均失败）" }
+    return $null
 }
 
 $count = $klines.Count
