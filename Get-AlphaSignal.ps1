@@ -811,6 +811,7 @@ foreach ($sector in $allSectors) {
                         WeekChg      = $null
                         MonthChg     = $null
                         AboveMA20    = $false
+                        BelowMA60    = $false
                         HighVolume   = $false
                         RSI14        = $null
                         RevGrowth    = $null
@@ -842,6 +843,7 @@ foreach ($sector in $allSectors) {
                 WeekChg      = $null
                 MonthChg     = $null
                 AboveMA20    = $false
+                BelowMA60    = $false
                 HighVolume   = $false
                 RSI14        = $null
                 RevGrowth    = $null
@@ -931,6 +933,18 @@ foreach ($stk in $candidates) {
                 }
                 $ma20 = if ($closeN -gt 0) { $closeSum / $closeN } else { 0 }
                 $stk.AboveMA20 = ($ma20 -gt 0 -and $latestClose -gt $ma20)
+            }
+
+            # MA60 — 60日均线（用于破位判断）
+            if ($count -ge 20) {
+                $ma60start = [Math]::Max(0, $count - 60)
+                $cSum60 = 0.0; $cN60 = 0
+                for ($ci = $ma60start; $ci -lt $count; $ci++) {
+                    $cp60 = $lines[$ci] -split ","
+                    if ($cp60.Count -gt 2) { $cSum60 += [double]$cp60[2]; $cN60++ }
+                }
+                $ma60 = if ($cN60 -gt 0) { $cSum60 / $cN60 } else { 0 }
+                $stk.BelowMA60 = ($ma60 -gt 0 -and $latestClose -lt $ma60)
             }
 
             # Volume check: today vs 5-day average
@@ -1109,7 +1123,26 @@ foreach ($stk in $decliners) {
             elseif ($stk.MonthChg -ge -10 -and $stk.MonthChg -le -5) { $techScore += 10 }
 
             # RSI oversold bonus (RSI < 35 = good entry point)
-            if ($null -ne $stk.RSI14 -and $stk.RSI14 -lt 35) { $techScore = [Math]::Min(30, $techScore + 5) }
+            if ($null -ne $stk.RSI14 -and $stk.RSI14 -lt 35) { $techScore += 5 }
+
+            # ── 回测教训：RSI 过热惩罚（追高杀手，比亚迪 RSI=74.6 → 当天-2%） ──
+            if ($null -ne $stk.RSI14 -and $stk.RSI14 -gt 70) { $techScore -= 10 }
+            if ($null -ne $stk.RSI14 -and $stk.RSI14 -gt 80) { $techScore -= 5 }  # 累计-15
+
+            # ── 回测教训：5日追高惩罚（超声电子 5日+9.43% → 当天-4%） ──
+            if ($stk.WeekChg -gt 7)     { $techScore -= 8 }
+            elseif ($stk.WeekChg -gt 4) { $techScore -= 4 }
+
+            # ── 破位下跌惩罚：跌破均线说明趋势走坏 ──
+            # 注: 双破位(BelowMA60 + !AboveMA20)已在估值阶段硬过滤，此处处理单破位
+            if ($stk.BelowMA60) {
+                $techScore -= 5   # 仅破MA60 = 中期趋势转弱
+            }
+            elseif (-not $stk.AboveMA20) {
+                $techScore -= 3   # 仅破MA20 = 短期趋势偏弱
+            }
+
+            $techScore = [Math]::Max(-10, [Math]::Min(30, $techScore))
 
             $stk.Score = $fundScore + $techScore  # valuation added after CAPE
 
@@ -1157,6 +1190,22 @@ foreach ($stk in $alphaStocks) {
         continue
     }
 
+    # ── 双均线破位硬过滤：同时跌破MA20+MA60 = 趋势彻底走坏，不推荐 ──
+    if ($stk.BelowMA60 -and -not $stk.AboveMA20) {
+        $script:DQ.StocksSkipped++
+        if (-not $Quiet) {
+            Write-Host "    [双破位] 跳过 $($stk.Code) $($stk.Name) 跌破MA20+MA60" -ForegroundColor DarkGray
+        }
+        continue
+    }
+
+    # ── 趋势标签（用于输出展示） ──
+    $maTag = if ($stk.AboveMA20 -and -not $stk.BelowMA60) { "↑多" }
+             elseif ($stk.AboveMA20 -and $stk.BelowMA60)  { "→整" }
+             elseif (-not $stk.AboveMA20 -and -not $stk.BelowMA60) { "↓弱" }
+             else { "↓破" }
+    $stk | Add-Member -NotePropertyName MATag -NotePropertyValue $maTag -Force
+
     # 3. 估值评分 (0-30)
     # CAPE 仅适用于周期股（化工/能源/有色等），非周期股用 PE_TTM+PB
     $valScore = 0
@@ -1171,7 +1220,7 @@ foreach ($stk in $alphaStocks) {
                 "Neutral" { $valScore += 12 }
                 "High"    { $valScore += 5 }
             }
-            if ($null -ne $va.PE_TTM) {
+            if ($null -ne $va.PE_TTM -and [double]$va.PE_TTM -gt 0) {
                 $pe = [double]$va.PE_TTM
                 if ($pe -lt 10)      { $valScore += 10 }
                 elseif ($pe -lt 20)  { $valScore += 7 }
@@ -1180,7 +1229,7 @@ foreach ($stk in $alphaStocks) {
         }
         else {
             # 非周期股（消费/医药/科技等）：PE_TTM 为主(25分) + PB 补充(5分)，不用CAPE
-            if ($null -ne $va.PE_TTM) {
+            if ($null -ne $va.PE_TTM -and [double]$va.PE_TTM -gt 0) {
                 $pe = [double]$va.PE_TTM
                 if ($pe -lt 15)      { $valScore += 25 }
                 elseif ($pe -lt 25)  { $valScore += 18 }
@@ -1195,6 +1244,15 @@ foreach ($stk in $alphaStocks) {
             }
         }
 
+        # ── 回测教训：极端估值惩罚（巨力索具 PE=877 得80分 → 当天-3.7%） ──
+        if ($null -ne $va.PE_TTM -and [double]$va.PE_TTM -gt 0) {
+            $pe = [double]$va.PE_TTM
+            if ($pe -gt 300)     { $valScore -= 15 }  # PE>300 = 纯投机
+            elseif ($pe -gt 100) { $valScore -= 10 }  # PE>100 = 极端高估
+        }
+        # ── 回测教训：极端PB惩罚（昂立教育 PB=21.53 得94分 → 当天-0.6%） ──
+        if ($null -ne $va.PB -and [double]$va.PB -gt 10) { $valScore -= 8 }
+
         # ── 相对估值修正：PE 相对行业中位PE（±7分） ──
         if ($null -ne $va.IndustryMedianPE -and [double]$va.IndustryMedianPE -gt 0 -and $null -ne $va.PE_TTM) {
             $relPE = [double]$va.PE_TTM / [double]$va.IndustryMedianPE
@@ -1204,14 +1262,16 @@ foreach ($stk in $alphaStocks) {
             elseif ($relPE -gt 1.3) { $valScore -= 3 }   # 比行业贵30%+
         }
 
-        $valScore = [Math]::Min(30, [Math]::Max(0, $valScore))
+        $valScore = [Math]::Min(30, [Math]::Max(-10, $valScore))
     }
 
     # ── PEG 加分进入基本面（从 stk.Score 的基本面部分追加） ──
-    if ($null -ne $va -and $null -ne $va.PE_TTM -and $null -ne $stk.ProfitGrowth -and [double]$stk.ProfitGrowth -gt 5) {
+    # 负PE → PEG无意义，必须 PE>0 且 PEG>0 才加分
+    if ($null -ne $va -and $null -ne $va.PE_TTM -and [double]$va.PE_TTM -gt 0 -and $null -ne $stk.ProfitGrowth -and [double]$stk.ProfitGrowth -gt 5) {
         $pegVal = [Math]::Round([double]$va.PE_TTM / [double]$stk.ProfitGrowth, 2)
         $pegBonus = 0
-        if ($pegVal -lt 0.5)     { $pegBonus = 8 }
+        if ($pegVal -le 0)       { $pegBonus = 0 }   # 负PEG = 亏损，不加分
+        elseif ($pegVal -lt 0.5) { $pegBonus = 8 }
         elseif ($pegVal -lt 1.0) { $pegBonus = 5 }
         elseif ($pegVal -lt 1.5) { $pegBonus = 2 }
         elseif ($pegVal -gt 3.0) { $pegBonus = -3 }
@@ -1247,13 +1307,19 @@ foreach ($stk in $alphaStocks) {
         "主题热点"
     }
 
-    # ── 信号类型加分：价值洼地+8, 景气反转+5（提升基本面选股权重） ──
+    # ── 信号类型加分/扣分（回测教训：主题热点 24% 胜率 → 扣分） ──
     $signalBonus = switch ($signalType) {
         "价值洼地" { 8 }
         "景气反转" { 5 }
+        "主题热点" { -3 }   # 回测胜率仅24%，抑制纯板块跟风
         default    { 0 }
     }
     $stk.Score = [Math]::Min(100, $stk.Score + $signalBonus)
+
+    # ── 回测教训：换手率过高惩罚（巨力索具 换手率18.7% = 投机炒作） ──
+    if ($va -and $null -ne $va.TurnoverRate -and [double]$va.TurnoverRate -gt 15) {
+        $stk.Score = [Math]::Max(0, $stk.Score - 5)
+    }
 
     # ── 持有时长 + 仓位建议 ──
     $holdPeriod = switch ($signalType) {
@@ -1275,6 +1341,12 @@ foreach ($stk in $alphaStocks) {
     $stk | Add-Member -NotePropertyName PEG         -NotePropertyValue $pegVal      -Force
 
     $filteredAlphaStocks.Add($stk)
+}
+# ── 回测教训：最低分门槛 55（低分股全军覆没：30/39/51 分全跌） ──
+$preFilterCount = $filteredAlphaStocks.Count
+$filteredAlphaStocks = @($filteredAlphaStocks | Where-Object { $_.Score -ge 55 })
+if (-not $Quiet -and $preFilterCount -gt $filteredAlphaStocks.Count) {
+    Write-Host "    [低分过滤] 移除 $($preFilterCount - $filteredAlphaStocks.Count) 只低于55分的股票" -ForegroundColor DarkGray
 }
 $alphaStocks = @($filteredAlphaStocks | Sort-Object -Property Score -Descending | Select-Object -First $TopN)
 
@@ -1319,7 +1391,7 @@ Write-Host ("═" * $W) -ForegroundColor Cyan
 Write-Host ""
 
 if ($alphaStocks.Count -gt 0) {
-    $hdr = "    " + (PadR "代码" 10) + (PadR "名称" 10) + (PadL "价格" 9) + (PadL "日涨" 8) + (PadL "周涨跌" 9) + (PadL "月涨跌" 9) + (PadL "营收增长" 10) + (PadL "净利增长" 10) + (PadL "ROE" 8) + (PadL "评分" 8) + (PadL "估值" 8) + (PadL "信号" 8) + "  板块"
+    $hdr = "    " + (PadR "代码" 10) + (PadR "名称" 10) + (PadL "价格" 9) + (PadL "日涨" 8) + (PadL "周涨跌" 9) + (PadL "月涨跌" 9) + (PadL "趋势" 5) + (PadL "营收增长" 10) + (PadL "净利增长" 10) + (PadL "ROE" 8) + (PadL "评分" 8) + (PadL "估值" 8) + (PadL "信号" 8) + "  板块"
     Write-Host $hdr -ForegroundColor Cyan
     Write-Host ("    " + ("-" * 123)) -ForegroundColor DarkGray
 
@@ -1355,6 +1427,9 @@ if ($alphaStocks.Count -gt 0) {
         Write-Host (PadL $dayStr 8) -NoNewline -ForegroundColor $dayColor
         Write-Host (PadL $weekStr 9) -NoNewline -ForegroundColor $weekColor
         Write-Host (PadL $monthStr 9) -NoNewline -ForegroundColor $monthColor
+        $maTagStr = if ($stk.MATag) { $stk.MATag } else { "" }
+        $maColor  = switch ($stk.MATag) { "↑多" { "Red" } "→整" { "Yellow" } "↓弱" { "Green" } "↓破" { "DarkGreen" } default { "White" } }
+        Write-Host (PadL $maTagStr 5) -NoNewline -ForegroundColor $maColor
         Write-Host (PadL $revStr 10) -NoNewline -ForegroundColor Red
         Write-Host (PadL $profStr 10) -NoNewline -ForegroundColor Red
         Write-Host (PadL $roeStr 8) -NoNewline -ForegroundColor Yellow
@@ -1399,13 +1474,13 @@ End-Stage "S6_评分"
 Write-Host ""
 Write-Host ("─" * $W) -ForegroundColor DarkGray
 Write-Host "  筛选漏斗:" -ForegroundColor DarkGray
-Write-Host "    热门板块 $($allSectors.Count) → 成分股 $($candidates.Count) → 回调/低位 $($decliners.Count) → 财报增长 $($alphaStocks.Count)" -ForegroundColor DarkGray
+Write-Host "    热门板块 $($allSectors.Count) → 成分股 $($candidates.Count) → 回调/低位 $($decliners.Count) → 财报增长+≥55分 $($alphaStocks.Count)" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  情绪指数: $($sentiment.SentimentIndex)/10  多头$($sentiment.BullCount) | 空头$($sentiment.BearCount) | 中性$($sentiment.NeutralCount)" -ForegroundColor DarkGray
 Write-Host "  信息差: 未报道 $($gapTrends.Count) 条 | 已报道 $($coveredTrends.Count) 条 | 国际 $($intlGaps.Count) 条" -ForegroundColor DarkGray
 Write-Host "  回调条件: 近一周下跌 或 近一月跌幅>5%" -ForegroundColor DarkGray
-Write-Host "  评分 = 基本面(0-40,含毛利率+PEG+趋势) + 技术(0-30,含RSI) + 估值(0-30,周期股CAPE/非周期PE+PB+相对行业PE), 满分100" -ForegroundColor DarkGray
-Write-Host "  信号类型: 价值洼地（CAPE低/PE低于行业80%）| 景气反转（营收净利均>25%）| 主题热点" -ForegroundColor DarkGray
+Write-Host "  评分 = 基本面(0-40,含PEG+趋势) + 技术(-10~30,含RSI过热/追高/破位惩罚) + 估值(-10~30,含极端PE/PB惩罚), 满分100" -ForegroundColor DarkGray
+Write-Host "  信号类型: 价值洼地(+8) | 景气反转(+5) | 主题热点(-3); 换手率>15%再-5; 最低55分门槛" -ForegroundColor DarkGray
 Write-Host "  止损参考: 当前价×92%；推荐记录已保存至 recommendations-log.csv" -ForegroundColor DarkGray
 Write-Host "  买点建议 = 分时相对均价线 + 主力资金分钟级净流向 + 当日阶段节奏" -ForegroundColor DarkGray
 Write-Host ""
