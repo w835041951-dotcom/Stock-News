@@ -285,7 +285,20 @@ if ($Action -in "all", "valuation") {
                     }
                 } catch { }
 
-                $pyOut = python $pyHelper $stockCode 10 $result.Price $cape 2>$null
+                $env:PYTHONIOENCODING = "utf-8"
+                $pyOutFile = Join-Path $env:TEMP "stockdetail_$stockCode.json"
+                if (Test-Path $pyOutFile) { Remove-Item $pyOutFile -Force }
+                $pyProc = Start-Process -FilePath "C:\Python\Python39\python.exe" -ArgumentList "$pyHelper","$stockCode","10","$($result.Price)","$cape" -Wait:$false -NoNewWindow -PassThru -RedirectStandardOutput $pyOutFile -RedirectStandardError "NUL"
+                if ($pyProc.WaitForExit(30000)) {
+                    # Completed within 30s
+                    if (Test-Path $pyOutFile) {
+                        $pyOut = Get-Content $pyOutFile -Raw -ErrorAction SilentlyContinue
+                    }
+                } else {
+                    # Timeout — kill it
+                    try { $pyProc.Kill() } catch {}
+                    $pyOut = $null
+                }
                 if ($pyOut) {
                     $pyData = $pyOut | ConvertFrom-Json
                     foreach ($key in $pyData.PSObject.Properties.Name) {

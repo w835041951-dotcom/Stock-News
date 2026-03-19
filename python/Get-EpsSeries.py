@@ -5,8 +5,12 @@ Helper: fetch long-history annual EPS for an A-share via akshare.
 Usage: python Get-EpsSeries.py <code_6digit> [years]
 Output: JSON array [{"Year":2024,"EPS":0.35}, ...]  sorted descending
 """
-import sys, json, time
-sys.stdout.reconfigure(encoding='utf-8')
+import sys, json, time, os, io
+os.environ["PYTHONIOENCODING"] = "utf-8"
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 import akshare as ak
 import pandas as pd

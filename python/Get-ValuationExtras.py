@@ -1,8 +1,17 @@
 import json
 import math
+import os
 import sys
 import time
 from datetime import datetime, timedelta
+
+# Force UTF-8 stdout — both reconfigure and env var for Python 3.9 compatibility
+os.environ["PYTHONIOENCODING"] = "utf-8"
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 import akshare as ak
 import pandas as pd

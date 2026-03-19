@@ -946,13 +946,50 @@ $endDate = (Get-Date).ToString("yyyyMMdd")
 $decliners = @()
 $momentumCandidates = @()
 $processed = 0
+$tcKlineHitCount  = 0        # 腾讯主源命中次数
+$tcKlineFailCount = 0        # 腾讯连续失败计数
 
 foreach ($stk in $candidates) {
     $processed++
     $secId = "$($stk.Market).$($stk.Code)"
-    # fields2: f51=日期 f52=开盘 f53=收盘 f54=最高 f55=最低 f56=成交量
-    $url = "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=$secId&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=101&fqt=0&beg=$begDate&end=$endDate&lmt=45"
-    $kline = Invoke-Api -Uri $url
+    $kline = $null
+
+    # ── 主源：腾讯 K 线（稳定快速）──
+    $tcSym = if ($stk.Market -eq '1') { "sh$($stk.Code)" } else { "sz$($stk.Code)" }
+    $tcUrl = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=$tcSym,day,,,50,qfq"
+    try {
+        $tcResp = Invoke-RestMethod -Uri $tcUrl -TimeoutSec 10 -Headers @{
+            "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "Referer"    = "https://stockapp.finance.qq.com"
+        }
+        $tcData = $tcResp.data.$tcSym
+        $dayKey = if ($tcData.qfqday) { 'qfqday' } elseif ($tcData.day) { 'day' } else { $null }
+        if ($dayKey -and $tcData.$dayKey.Count -gt 0) {
+            $tcLines = @(foreach ($row in $tcData.$dayKey) {
+                "$($row[0]),$($row[1]),$($row[2]),$($row[3]),$($row[4]),$($row[5])"
+            })
+            $kline = [PSCustomObject]@{
+                data = [PSCustomObject]@{
+                    klines = $tcLines
+                    name   = $stk.Name
+                }
+            }
+            $tcKlineHitCount++
+            $tcKlineFailCount = 0
+        } else { $tcKlineFailCount++ }
+    } catch { $tcKlineFailCount++ }
+
+    # ── 备源：东财 K 线（腾讯失败时兜底，8s超时）──
+    if (-not ($kline -and $kline.data -and $kline.data.klines)) {
+        $url = "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=$secId&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=101&fqt=0&beg=$begDate&end=$endDate&lmt=45"
+        try {
+            $kline = Invoke-RestMethod -Uri $url -Headers @{
+                "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                "Referer"    = "https://quote.eastmoney.com/"
+            } -TimeoutSec 8
+        } catch { $kline = $null }
+    }
+
     if ($kline -and $kline.data -and $kline.data.klines) {
         # seed code 路径名称可能只是代码，用K线API返回的name补全
         if ($kline.data.name -and ($stk.Name -eq $stk.Code -or $stk.Name -match '^\d{6}$')) {
@@ -1056,11 +1093,15 @@ foreach ($stk in $candidates) {
         }
     }
     if (-not $Quiet -and $processed % 20 -eq 0) {
-        Write-Host "    已检查 $processed / $($candidates.Count) ..." -ForegroundColor DarkGray
+        $srcTag = if ($tcKlineHitCount -gt 0) { " (腾讯:$tcKlineHitCount)" } else { "" }
+        Write-Host "    已检查 $processed / $($candidates.Count) ...$srcTag" -ForegroundColor DarkGray
     }
 }
 
 if (-not $Quiet) {
+    if ($tcKlineHitCount -gt 0) {
+        Write-Host "    [备源统计] 腾讯K线命中 $tcKlineHitCount 只" -ForegroundColor Yellow
+    }
     Write-Host ""
     Write-Host "    ── 回调股一览（近周下跌 或 近月跌幅>5%）──" -ForegroundColor Cyan
     Write-Host ""
@@ -1122,20 +1163,41 @@ foreach ($stk in $decliners) {
     if ($cachedFin) {
         $latest = $cachedFin
     } else {
-        $finUrl = "https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/ZYZBAjaxNew?type=0&code=${prefix}$($stk.Code)"
-        $finReferer = "https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/Index?type=web&code=${prefix}$($stk.Code)"
-        $fin = $null
+        # ── 主源：东财 datacenter API（更稳定）──
+        $dcUrl = "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_LICO_FN_CPD&columns=ALL&filter=(SECURITY_CODE=%22$($stk.Code)%22)&pageSize=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
         try {
-            $fin = Invoke-RestMethod -Uri $finUrl -Headers @{
+            $dcResp = Invoke-RestMethod -Uri $dcUrl -Headers @{
                 "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                "Referer"    = $finReferer
-                "Accept"     = "application/json, text/plain, */*"
-            } -TimeoutSec 15
+                "Referer"    = "https://data.eastmoney.com"
+            } -TimeoutSec 12
+            if ($dcResp -and $dcResp.result -and $dcResp.result.data -and $dcResp.result.data.Count -gt 0) {
+                $dcRow = $dcResp.result.data[0]
+                $latest = [PSCustomObject]@{
+                    TOTALOPERATEREVETZ = $dcRow.TOTAL_OPERATE_INCOME_YOY
+                    PARENTNETPROFITTZ  = $dcRow.PARENT_NETPROFIT_YOY
+                    ROEJQ              = $dcRow.ROE_WEIGHT
+                    REPORT_DATE_NAME   = $dcRow.REPORT_DATE_NAME
+                    XSJLL              = $dcRow.GROSS_PROFIT_RATIO
+                }
+                Set-CachedData -Key $finCacheKey -Value $latest
+            }
         } catch {}
 
-        if ($fin -and $fin.data -and $fin.data.Count -gt 0) {
-            $latest = $fin.data[0]
-            Set-CachedData -Key $finCacheKey -Value $latest
+        # ── 备源：东财 emweb（datacenter 失败时兜底）──
+        if (-not $latest) {
+            $finUrl = "https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/ZYZBAjaxNew?type=0&code=${prefix}$($stk.Code)"
+            $finReferer = "https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/Index?type=web&code=${prefix}$($stk.Code)"
+            try {
+                $fin = Invoke-RestMethod -Uri $finUrl -Headers @{
+                    "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    "Referer"    = $finReferer
+                    "Accept"     = "application/json, text/plain, */*"
+                } -TimeoutSec 10
+                if ($fin -and $fin.data -and $fin.data.Count -gt 0) {
+                    $latest = $fin.data[0]
+                    Set-CachedData -Key $finCacheKey -Value $latest
+                }
+            } catch {}
         }
     }
 

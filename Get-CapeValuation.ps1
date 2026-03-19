@@ -128,7 +128,16 @@ $seriesMode = "Akshare"
 try {
     $pyHelper = Join-Path $PSScriptRoot "python\Get-EpsSeries.py"
     if (Test-Path $pyHelper) {
-        $pyOut = python $pyHelper $parsed.Code $Years 2>$null
+        $env:PYTHONIOENCODING = "utf-8"
+        $pyOutFile = Join-Path $env:TEMP "eps_$($parsed.Code).json"
+        if (Test-Path $pyOutFile) { Remove-Item $pyOutFile -Force }
+        $pyProc = Start-Process -FilePath "C:\Python\Python39\python.exe" -ArgumentList "$pyHelper","$($parsed.Code)","$Years" -Wait:$false -NoNewWindow -PassThru -RedirectStandardOutput $pyOutFile -RedirectStandardError "NUL"
+        $pyOut = $null
+        if ($pyProc.WaitForExit(30000)) {
+            if (Test-Path $pyOutFile) { $pyOut = Get-Content $pyOutFile -Raw -ErrorAction SilentlyContinue }
+        } else {
+            try { $pyProc.Kill() } catch {}
+        }
         if ($pyOut) {
             $pyData = $pyOut | ConvertFrom-Json
             if ($pyData -is [array] -and $pyData.Count -ge 2) {
@@ -265,7 +274,16 @@ $extras = [PSCustomObject]@{
 try {
     $pyExtraHelper = Join-Path $PSScriptRoot "python\Get-ValuationExtras.py"
     if (Test-Path $pyExtraHelper) {
-        $pyExtraOut = python $pyExtraHelper $parsed.Code $Years $price $nominalCape 2>$null
+        $env:PYTHONIOENCODING = "utf-8"
+        $pyExOutFile = Join-Path $env:TEMP "valext_$($parsed.Code).json"
+        if (Test-Path $pyExOutFile) { Remove-Item $pyExOutFile -Force }
+        $pyExProc = Start-Process -FilePath "C:\Python\Python39\python.exe" -ArgumentList "$pyExtraHelper","$($parsed.Code)","$Years","$price","$nominalCape" -Wait:$false -NoNewWindow -PassThru -RedirectStandardOutput $pyExOutFile -RedirectStandardError "NUL"
+        $pyExtraOut = $null
+        if ($pyExProc.WaitForExit(30000)) {
+            if (Test-Path $pyExOutFile) { $pyExtraOut = Get-Content $pyExOutFile -Raw -ErrorAction SilentlyContinue }
+        } else {
+            try { $pyExProc.Kill() } catch {}
+        }
         if ($pyExtraOut) {
             $extraData = $pyExtraOut | ConvertFrom-Json
             if ($extraData) {
