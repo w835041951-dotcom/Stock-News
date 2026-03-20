@@ -57,6 +57,10 @@ $script:DQ = [PSCustomObject]@{
     StocksSkipped = 0   # 因流动性/数据不足跳过的股票数
 }
 
+# ── 并行预取缓存 ──────────────────────────────────────────────
+$script:PrefetchedDetail = @{}
+$script:PrefetchedCAPE   = @{}
+
 # ── 运行计时器 ────────────────────────────────────────────────
 $script:StageTimers = [ordered]@{}
 $script:RunStart    = Get-Date
@@ -258,9 +262,13 @@ function Get-AStockValuation {
     }
 
     try {
-        if (Test-Path $detailScript) {
+        $d = $null
+        if ($script:PrefetchedDetail.ContainsKey($Code)) {
+            $d = $script:PrefetchedDetail[$Code]
+        } elseif (Test-Path $detailScript) {
             $d = & $detailScript -Code $Code -Action all -Quiet -ErrorAction SilentlyContinue
-            if ($d) {
+        }
+        if ($d) {
                 $v.PE_TTM       = $d.PE_TTM
                 $v.PB           = $d.PB
                 $v.TurnoverRate = $d.TurnoverRate
@@ -288,7 +296,6 @@ function Get-AStockValuation {
                     }
                 }
             } else { $script:DQ.ApiFailures++ }
-        }
     }
     catch {}
 
@@ -296,12 +303,15 @@ function Get-AStockValuation {
     if ($IsCyclical) {
         $capeScript = Join-Path $PSScriptRoot 'Get-CapeValuation.ps1'
         try {
-            if (Test-Path $capeScript) {
+            $c = $null
+            if ($script:PrefetchedCAPE.ContainsKey($Code)) {
+                $c = $script:PrefetchedCAPE[$Code]
+            } elseif (Test-Path $capeScript) {
                 $c = & $capeScript -Code $Code -Years 10 -Quiet -ErrorAction SilentlyContinue
-                if ($c) {
-                    $v.CapeNominal = $c.NominalCAPE
-                    $v.CapeLevel = $c.CapeLevel
-                }
+            }
+            if ($c) {
+                $v.CapeNominal = $c.NominalCAPE
+                $v.CapeLevel = $c.CapeLevel
             }
         }
         catch {}
@@ -1151,11 +1161,51 @@ if (-not $Quiet) {
 $alphaStocks = @()
 $checkedCount = 0
 
+# ── 批量预取财报（1次API取代N次sequential，大幅加速S6） ──
+$uncachedCodes = @($decliners | ForEach-Object { $_.Code } | Where-Object {
+    -not (Get-CachedData -Key "fin_$_" -MaxAgeMinutes 360)
+})
+if ($uncachedCodes.Count -gt 0) {
+    $codeStr = ($uncachedCodes | ForEach-Object { "`"$_`"" }) -join ','
+    $batchUrl = "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_LICO_FN_CPD&columns=ALL&filter=(SECURITY_CODE+in+($codeStr))&pageSize=200&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
+    try {
+        $batchResp = Invoke-RestMethod -Uri $batchUrl -Headers @{
+            "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "Referer"    = "https://data.eastmoney.com"
+        } -TimeoutSec 20
+        if ($batchResp -and $batchResp.result -and $batchResp.result.data) {
+            $seen = @{}
+            foreach ($row in $batchResp.result.data) {
+                $c = $row.SECURITY_CODE
+                if (-not $seen[$c]) {
+                    $seen[$c] = $true
+                    $obj = [PSCustomObject]@{
+                        TOTALOPERATEREVETZ = $row.TOTAL_OPERATE_INCOME_YOY
+                        PARENTNETPROFITTZ  = $row.PARENT_NETPROFIT_YOY
+                        ROEJQ              = $row.ROE_WEIGHT
+                        REPORT_DATE_NAME   = $row.REPORT_DATE_NAME
+                        XSJLL              = $row.GROSS_PROFIT_RATIO
+                        XSMLL              = $row.GROSS_PROFIT_RATIO
+                    }
+                    Set-CachedData -Key "fin_$c" -Value $obj
+                }
+            }
+            if (-not $Quiet) {
+                Write-Host "    [批量财报] 预取 $($seen.Count)/$($uncachedCodes.Count) 只" -ForegroundColor DarkGray
+            }
+        }
+    } catch {
+        if (-not $Quiet) {
+            Write-Host "    [批量财报] 批量失败，回退逐只查询" -ForegroundColor DarkYellow
+        }
+    }
+}
+
 foreach ($stk in $decliners) {
     $checkedCount++
     $prefix = if ($stk.Code -match "^6") { "SH" } else { "SZ" }
 
-    # Check cache first (financial reports are stable within a day)
+    # Check cache first (batch pre-fetch + prior cache)
     $finCacheKey = "fin_$($stk.Code)"
     $cachedFin = Get-CachedData -Key $finCacheKey -MaxAgeMinutes 360
     $latest = $null
@@ -1163,7 +1213,7 @@ foreach ($stk in $decliners) {
     if ($cachedFin) {
         $latest = $cachedFin
     } else {
-        # ── 主源：东财 datacenter API（更稳定）──
+        # ── 逐只兜底：datacenter API（批量未命中时） ──
         $dcUrl = "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_LICO_FN_CPD&columns=ALL&filter=(SECURITY_CODE=%22$($stk.Code)%22)&pageSize=1&sortColumns=REPORT_DATE&sortTypes=-1&source=WEB&client=WEB"
         try {
             $dcResp = Invoke-RestMethod -Uri $dcUrl -Headers @{
@@ -1178,12 +1228,13 @@ foreach ($stk in $decliners) {
                     ROEJQ              = $dcRow.ROE_WEIGHT
                     REPORT_DATE_NAME   = $dcRow.REPORT_DATE_NAME
                     XSJLL              = $dcRow.GROSS_PROFIT_RATIO
+                    XSMLL              = $dcRow.GROSS_PROFIT_RATIO
                 }
                 Set-CachedData -Key $finCacheKey -Value $latest
             }
         } catch {}
 
-        # ── 备源：东财 emweb（datacenter 失败时兜底）──
+        # ── 备源：东财 emweb ──
         if (-not $latest) {
             $finUrl = "https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/ZYZBAjaxNew?type=0&code=${prefix}$($stk.Code)"
             $finReferer = "https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/Index?type=web&code=${prefix}$($stk.Code)"
@@ -1304,6 +1355,58 @@ foreach ($stk in $decliners) {
 }
 
 $alphaStocks = @($alphaStocks | Sort-Object -Property Score -Descending | Select-Object -First $TopN)
+
+# ── 并行预取：一次性启动所有 StockDetail + CAPE 进程 ──
+$uncachedCodes = @()
+foreach ($stk in $alphaStocks) {
+    $cacheKey = "val_${script:CacheVersion}_$($stk.Code)"
+    $cached = Get-CachedData -Key $cacheKey -MaxAgeMinutes 240
+    if (-not $cached) { $uncachedCodes += $stk }
+}
+
+if ($uncachedCodes.Count -gt 0) {
+    if (-not $Quiet) {
+        Write-Host "  并行预取 $($uncachedCodes.Count) 只股票估值..." -ForegroundColor DarkGray
+    }
+
+    # Capture script-scope vars for parallel access
+    $localScriptDir    = $PSScriptRoot
+    $localCyclicalKWs  = $script:CyclicalKeywords
+
+    # ForEach-Object -Parallel: thread pool, no process startup cost
+    $parallelResults = $uncachedCodes | ForEach-Object -Parallel {
+        $code      = $_.Code
+        $sectors   = $_.Sectors
+        $scriptDir = $using:localScriptDir
+        $kws       = $using:localCyclicalKWs
+        $sectorStr = ($sectors -join ' ')
+        $isCyclical = [bool]($kws | Where-Object { $sectorStr -match $_ })
+
+        $r = @{ Code = $code }
+        try {
+            $d = & "$scriptDir\Get-StockDetail.ps1" -Code $code -Action all -Quiet -ErrorAction SilentlyContinue
+            if ($d) { $r['Detail'] = $d }
+        } catch {}
+        if ($isCyclical) {
+            try {
+                $c = & "$scriptDir\Get-CapeValuation.ps1" -Code $code -Years 10 -Quiet -ErrorAction SilentlyContinue
+                if ($c) { $r['CAPE'] = $c }
+            } catch {}
+        }
+        [PSCustomObject]$r
+    } -ThrottleLimit 5 -TimeoutSeconds 90
+
+    # Collect results into prefetch hashtables
+    foreach ($r in @($parallelResults)) {
+        if ($r.Detail) { $script:PrefetchedDetail[$r.Code] = $r.Detail }
+        if ($r.CAPE)   { $script:PrefetchedCAPE[$r.Code]   = $r.CAPE }
+    }
+
+    if (-not $Quiet) {
+        $okCount = $script:PrefetchedDetail.Count
+        Write-Host "  并行预取完成：$okCount/$($uncachedCodes.Count) 成功" -ForegroundColor DarkGray
+    }
+}
 
 # ── 追加估值 + 估值评分（满分30分） ──
 $filteredAlphaStocks = [System.Collections.Generic.List[object]]::new()

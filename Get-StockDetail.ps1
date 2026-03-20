@@ -289,8 +289,8 @@ if ($Action -in "all", "valuation") {
                 $pyOutFile = Join-Path $env:TEMP "stockdetail_$stockCode.json"
                 if (Test-Path $pyOutFile) { Remove-Item $pyOutFile -Force }
                 $pyProc = Start-Process -FilePath "C:\Python\Python39\python.exe" -ArgumentList "$pyHelper","$stockCode","10","$($result.Price)","$cape" -Wait:$false -NoNewWindow -PassThru -RedirectStandardOutput $pyOutFile -RedirectStandardError "NUL"
-                if ($pyProc.WaitForExit(30000)) {
-                    # Completed within 30s
+                if ($pyProc.WaitForExit(15000)) {
+                    # Completed within 15s
                     if (Test-Path $pyOutFile) {
                         $pyOut = Get-Content $pyOutFile -Raw -ErrorAction SilentlyContinue
                     }

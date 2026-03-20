@@ -133,7 +133,7 @@ try {
         if (Test-Path $pyOutFile) { Remove-Item $pyOutFile -Force }
         $pyProc = Start-Process -FilePath "C:\Python\Python39\python.exe" -ArgumentList "$pyHelper","$($parsed.Code)","$Years" -Wait:$false -NoNewWindow -PassThru -RedirectStandardOutput $pyOutFile -RedirectStandardError "NUL"
         $pyOut = $null
-        if ($pyProc.WaitForExit(30000)) {
+        if ($pyProc.WaitForExit(15000)) {
             if (Test-Path $pyOutFile) { $pyOut = Get-Content $pyOutFile -Raw -ErrorAction SilentlyContinue }
         } else {
             try { $pyProc.Kill() } catch {}
@@ -279,7 +279,7 @@ try {
         if (Test-Path $pyExOutFile) { Remove-Item $pyExOutFile -Force }
         $pyExProc = Start-Process -FilePath "C:\Python\Python39\python.exe" -ArgumentList "$pyExtraHelper","$($parsed.Code)","$Years","$price","$nominalCape" -Wait:$false -NoNewWindow -PassThru -RedirectStandardOutput $pyExOutFile -RedirectStandardError "NUL"
         $pyExtraOut = $null
-        if ($pyExProc.WaitForExit(30000)) {
+        if ($pyExProc.WaitForExit(15000)) {
             if (Test-Path $pyExOutFile) { $pyExtraOut = Get-Content $pyExOutFile -Raw -ErrorAction SilentlyContinue }
         } else {
             try { $pyExProc.Kill() } catch {}
