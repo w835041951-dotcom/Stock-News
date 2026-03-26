@@ -30,6 +30,11 @@ $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 . "$PSScriptRoot\lib\StockCode.ps1"
 . "$PSScriptRoot\lib\Format.ps1"
 
+# ── UTC+8 时间助手 ──
+function Get-ChinaTime {
+    [System.DateTime]::UtcNow.AddHours(8)
+}
+
 $LogFile   = Join-Path $PSScriptRoot "next-day-top1-log.csv"
 $StateFile = Join-Path $PSScriptRoot "next-day-top1.json"
 
@@ -48,7 +53,7 @@ $techPattern = '通信|芯片|半导体|集成电路|软件|互联网|计算机|
 #  时间上下文
 # ══════════════════════════════════════════════════════════════
 function Get-MarketContext {
-    $now   = Get-Date
+    $now   = Get-ChinaTime
     $hour  = $now.Hour
     $min   = $now.Minute
     $dow   = $now.DayOfWeek
@@ -400,7 +405,7 @@ function Save-Prediction {
     if (-not (Test-Path $LogFile)) { $header | Out-File $LogFile -Encoding UTF8 }
     $sb = $Pick.ScoreDetail
     $line = '{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},"{10}",{11},{12},{13},{14},{15},"{16}"' -f `
-        (Get-Date -Format "yyyy-MM-dd HH:mm"), $Context.TargetDate.ToString("yyyy-MM-dd"), $Context.Phase,
+        (Get-ChinaTime).ToString("yyyy-MM-dd HH:mm"), $Context.TargetDate.ToString("yyyy-MM-dd"), $Context.Phase,
         $Tag, $Pick.Code, $Pick.Name, $Pick.TotalScore,
         $sb.Gap, $sb.Reversal, $sb.Volatility,
         ($Pick.Sectors -join '/'), $Pick.WeekChange, $Pick.AvgRange, $Pick.RSI,
@@ -413,7 +418,7 @@ function Save-Prediction {
     if (Test-Path $StateFile) { try { $state = Get-Content $StateFile -Raw | ConvertFrom-Json -AsHashtable } catch { $state = @{} } }
     $key = if ($Tag) { $Tag } else { "Top1" }
     $state[$key] = @{
-        LastUpdate = (Get-Date -Format "yyyy-MM-dd HH:mm")
+        LastUpdate = (Get-ChinaTime).ToString("yyyy-MM-dd HH:mm")
         TargetDate = $Context.TargetDate.ToString("yyyy-MM-dd")
         Phase      = $Context.Phase
         Code       = $Pick.Code; Name = $Pick.Name
@@ -428,7 +433,7 @@ function Save-Prediction {
 # ══════════════════════════════════════════════════════════════
 function Invoke-HourlyScan {
     $ctx = Get-MarketContext
-    $ts  = Get-Date -Format "yyyy-MM-dd HH:mm"
+    $ts  = (Get-ChinaTime).ToString("yyyy-MM-dd HH:mm")
 
     if (-not $Quiet) {
         Write-Host ""

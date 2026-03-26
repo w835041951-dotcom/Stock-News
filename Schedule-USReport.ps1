@@ -15,6 +15,12 @@ $desktop = [Environment]::GetFolderPath('Desktop')
 $outFile = Join-Path $desktop "$date-美股强势.txt"
 $logFile = Join-Path $desktop "$date-美股强势-error.log"
 
+# Skip if today's report already exists (avoid duplicate from LogonTrigger)
+if ((Test-Path $outFile) -and (Get-Item $outFile).Length -gt 100) {
+    Write-Host "Already ran today: $outFile"
+    return
+}
+
 try {
     & ".\Get-USStrongAStocks.ps1" *> $outFile
     if (-not (Test-Path $outFile) -or (Get-Item $outFile).Length -eq 0) {

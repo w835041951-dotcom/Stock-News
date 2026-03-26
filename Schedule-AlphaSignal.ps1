@@ -15,6 +15,12 @@ $desktop = [Environment]::GetFolderPath('Desktop')
 $outFile = Join-Path $desktop "$date-AlphaSignal.txt"
 $logFile = Join-Path $desktop "$date-AlphaSignal-error.log"
 
+# Skip if today's report already exists (avoid duplicate from LogonTrigger)
+if ((Test-Path $outFile) -and (Get-Item $outFile).Length -gt 100) {
+    Write-Host "Already ran today: $outFile"
+    return
+}
+
 try {
     & ".\Get-AlphaSignal.ps1" *> $outFile
     # 若输出为空则写提示
