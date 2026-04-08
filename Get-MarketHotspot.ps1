@@ -113,7 +113,8 @@ function Get-MarketSentiment {
 
     # 东财快讯
     try {
-        $emUrl = "https://np-listapi.eastmoney.com/comm/web/getNewsByColumns?client=web&biz=web_news_col&column=350&order=1&needInteractData=0&page_index=1&page_size=30"
+        $traceId = [guid]::NewGuid().ToString('N')
+        $emUrl = "https://np-listapi.eastmoney.com/comm/web/getNewsByColumns?client=web&biz=web_news_col&column=350&order=1&needInteractData=0&page_index=1&page_size=30&req_trace=$traceId"
         $emData = Invoke-RestMethod -Uri $emUrl -Headers @{
             "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             "Referer"    = "https://finance.eastmoney.com/"
@@ -140,19 +141,16 @@ function Get-MarketSentiment {
         }
     } catch {}
 
-    # 36Kr
+    # 36Kr (JSON API)
     try {
-        $krUrl = "https://www.36kr.com/newsflashes"
-        $krResp = Invoke-WebRequest -Uri $krUrl -Headers @{
+        $krResp = Invoke-RestMethod -Uri "https://36kr.com/api/newsflash?per_page=20" -Headers @{
             "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        } -TimeoutSec 12 -UseBasicParsing
-        if ($krResp.Content) {
-            $matches1 = [regex]::Matches($krResp.Content, '"title"\s*:\s*"([^"]{5,80})"')
-            if ($matches1.Count -gt 0) {
-                foreach ($m in $matches1) { $headlines += $m.Groups[1].Value }
-            } else {
-                $matches2 = [regex]::Matches($krResp.Content, '<h3[^>]*>([^<]{5,80})</h3>')
-                foreach ($m in $matches2) { $headlines += $m.Groups[1].Value }
+            "Referer"    = "https://36kr.com/"
+        } -TimeoutSec 12
+        if ($krResp -and $krResp.data -and $krResp.data.items) {
+            foreach ($item in $krResp.data.items) {
+                $t = "$($item.title)" -replace '<[^>]+>', '' -replace '&[a-z]+;', ' '
+                if ($t.Trim().Length -gt 4) { $headlines += $t.Trim() }
             }
         }
     } catch {}
@@ -306,7 +304,8 @@ function Get-LatestNews {
     # 东财备用
     if ($news.Count -eq 0) {
         try {
-            $emUrl = "https://np-listapi.eastmoney.com/comm/web/getNewsByColumns?client=web&biz=web_news_col&column=350&order=1&needInteractData=0&page_index=1&page_size=$Top"
+            $traceId = [guid]::NewGuid().ToString('N')
+            $emUrl = "https://np-listapi.eastmoney.com/comm/web/getNewsByColumns?client=web&biz=web_news_col&column=350&order=1&needInteractData=0&page_index=1&page_size=$Top&req_trace=$traceId"
             $emData = Invoke-ApiRequest -Url $emUrl -Referer "https://finance.eastmoney.com/"
             if ($emData -and $emData.data -and $emData.data.list) {
                 foreach ($item in $emData.data.list) {

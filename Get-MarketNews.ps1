@@ -55,7 +55,8 @@ if ($Source -in @("sina","all")) {
 # ── 东方财富快讯 ──
 if ($Source -in @("eastmoney","all")) {
     try {
-        $emUrl = "https://np-listapi.eastmoney.com/comm/web/getNewsByColumns?client=web&biz=web_news_col&column=350&order=1&needInteractData=0&page_index=1&page_size=$Top"
+        $traceId = [guid]::NewGuid().ToString('N')
+        $emUrl = "https://np-listapi.eastmoney.com/comm/web/getNewsByColumns?client=web&biz=web_news_col&column=350&order=1&needInteractData=0&page_index=1&page_size=$Top&req_trace=$traceId"
         $emData = Invoke-StockApi -Uri $emUrl -Referer "https://finance.eastmoney.com/"
         if ($emData -and $emData.data -and $emData.data.list) {
             foreach ($item in $emData.data.list) {

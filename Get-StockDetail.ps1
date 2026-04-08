@@ -176,6 +176,26 @@ if ($Action -in "all", "price") {
     $klineUrl = "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=$secId&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=0&beg=$begDate&end=$today&lmt=45"
     $kline = Invoke-WebRequest2 -Uri $klineUrl
 
+    if (-not ($kline -and $kline.data -and $kline.data.klines)) {
+        # 备源：腾讯日K
+        $tcSym = if ($secId -match '^1\.') { "sh$stockCode" } else { "sz$stockCode" }
+        $tcUrl = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=$tcSym,day,,,45,qfq"
+        try {
+            $tcResp = Invoke-RestMethod -Uri $tcUrl -TimeoutSec 10 -Headers @{Referer='https://stockapp.finance.qq.com'}
+            $tcData = $tcResp.data.$tcSym
+            $dayKey = if ($tcData.qfqday) { 'qfqday' } elseif ($tcData.day) { 'day' } else { $null }
+            if ($dayKey -and $tcData.$dayKey.Count -gt 0) {
+                $tcLines = $tcData.$dayKey | ForEach-Object { "$($_[0]),$($_[1]),$($_[2]),$($_[3]),$($_[4]),$($_[5])" }
+                $kline = [PSCustomObject]@{
+                    data = [PSCustomObject]@{
+                        klines = $tcLines
+                        name   = $tcSym
+                    }
+                }
+            }
+        } catch {}
+    }
+
     if ($kline -and $kline.data -and $kline.data.klines) {
         $lines = @($kline.data.klines)
         if (-not $result.Name -and $kline.data.name) {

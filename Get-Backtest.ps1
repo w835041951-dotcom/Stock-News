@@ -64,39 +64,60 @@ if (-not $rows -or @($rows).Count -eq 0) {
     return $null
 }
 
-# ── 东方财富历史 K 线 API ──
-function Get-ClosePriceOnDate {
-    param([string]$Code, [string]$Date)
-    # 判断交易所前缀
+# ── K线 API (东财 + 腾讯备源) ──
+function Get-KlineData {
+    param([string]$Code, [string]$BegDate, [string]$EndDate, [int]$Lmt = 10)
     $prefix = if ($Code -match '^6') { "1" } else { "0" }
-    $begDate = [datetime]::Parse($Date).ToString("yyyyMMdd")
-    $endDate = [datetime]::Parse($Date).AddDays(7).ToString("yyyyMMdd")   # 多取几天防节假日
-    $url = "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${prefix}.${Code}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=1&beg=$begDate&end=$endDate&lmt=10"
+    # 主源：东财
+    $url = "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${prefix}.${Code}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=1&beg=$BegDate&end=$EndDate&lmt=$Lmt"
     try {
-        $resp = Invoke-RestMethod -Uri $url -TimeoutSec 10
+        $resp = Invoke-RestMethod -Uri $url -TimeoutSec 10 -Headers @{Referer='https://quote.eastmoney.com/'}
         if ($resp -and $resp.data -and $resp.data.klines -and $resp.data.klines.Count -gt 0) {
-            # klines[0] = "日期,开,收,高,低,成交量,成交额,振幅,涨跌幅,涨跌额,换手率"
-            $parts = $resp.data.klines[0] -split ','
-            return [double]$parts[2]  # 收盘价
+            return $resp.data.klines
         }
     } catch {}
+    # 备源：腾讯日K
+    $tcSym = if ($Code -match '^6') { "sh$Code" } else { "sz$Code" }
+    $tcUrl = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=$tcSym,day,,,$Lmt,qfq"
+    try {
+        $tcResp = Invoke-RestMethod -Uri $tcUrl -TimeoutSec 10 -Headers @{Referer='https://stockapp.finance.qq.com'}
+        $tcData = $tcResp.data.$tcSym
+        $dayKey = if ($tcData.qfqday) { 'qfqday' } elseif ($tcData.day) { 'day' } else { $null }
+        if ($dayKey -and $tcData.$dayKey.Count -gt 0) {
+            # 转换腾讯格式为东财逗号字符串格式：日期,开,收,高,低,成交量
+            $lines = foreach ($row in $tcData.$dayKey) {
+                "$($row[0]),$($row[1]),$($row[2]),$($row[3]),$($row[4]),$($row[5]),0,0,0,0,0"
+            }
+            # 过滤日期范围
+            $beg = $BegDate; $en = $EndDate
+            return @($lines | Where-Object { $d = ($_ -split ',')[0] -replace '-',''; $d -ge $beg -and $d -le $en })
+        }
+    } catch {}
+    return $null
+}
+
+function Get-ClosePriceOnDate {
+    param([string]$Code, [string]$Date)
+    $begDate = [datetime]::Parse($Date).ToString("yyyyMMdd")
+    $endDate = [datetime]::Parse($Date).AddDays(7).ToString("yyyyMMdd")
+    $klines = Get-KlineData -Code $Code -BegDate $begDate -EndDate $endDate -Lmt 10
+    if ($klines -and $klines.Count -gt 0) {
+        $parts = $klines[0] -split ','
+        return [double]$parts[2]
+    }
     return $null
 }
 
 function Get-ClosePriceAfterDays {
     param([string]$Code, [string]$RecDate, [int]$AfterDays)
     $targetDate = [datetime]::Parse($RecDate).AddDays($AfterDays)
-    $prefix = if ($Code -match '^6') { "1" } else { "0" }
     $begDate = $targetDate.ToString("yyyyMMdd")
     $endDate = $targetDate.AddDays(7).ToString("yyyyMMdd")
-    $url = "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${prefix}.${Code}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=1&beg=$begDate&end=$endDate&lmt=10"
-    try {
-        $resp = Invoke-RestMethod -Uri $url -TimeoutSec 10
-        if ($resp -and $resp.data -and $resp.data.klines -and $resp.data.klines.Count -gt 0) {
-            $parts = $resp.data.klines[0] -split ','
-            return [double]$parts[2]
-        }
-    } catch {}
+    $klines = Get-KlineData -Code $Code -BegDate $begDate -EndDate $endDate -Lmt 10
+    if ($klines -and $klines.Count -gt 0) {
+        $parts = $klines[0] -split ','
+        return [double]$parts[2]
+    }
     return $null
 }
 

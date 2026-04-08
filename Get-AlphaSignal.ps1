@@ -155,12 +155,11 @@ function Get-MarketSentiment {
 
     # Source 1: 东方财富快讯
     try {
-        $emResp = Invoke-Api -Uri "https://np-listapi.eastmoney.com/comm/web/getNewsByTag?client=web&tagId=317&pageSize=20&pageNum=1" `
-                             -Referer "https://www.eastmoney.com/"
-        if ($emResp -and $emResp.data -and $emResp.data.entlist) {
-            $list = $emResp.data.entlist
-            if ($list -is [array]) { $list = $list[0] }
-            foreach ($item in ($list | Select-Object -First 15)) {
+        $traceId = [guid]::NewGuid().ToString('N')
+        $emResp = Invoke-Api -Uri "https://np-listapi.eastmoney.com/comm/web/getNewsByColumns?client=web&biz=web_news_col&column=350&order=1&needInteractData=0&page_index=1&page_size=20&req_trace=$traceId" `
+                             -Referer "https://finance.eastmoney.com/"
+        if ($emResp -and $emResp.data -and $emResp.data.list) {
+            foreach ($item in ($emResp.data.list | Select-Object -First 15)) {
                 $t = "$($item.title)" -replace '<[^>]+>', '' -replace '&nbsp;', ' '
                 if ($t.Trim().Length -gt 4) {
                     [void]$items.Add([PSCustomObject]@{ Title = $t.Trim(); Source = "东财快讯"; Score = Get-HeadlineScore $t })
@@ -184,20 +183,15 @@ function Get-MarketSentiment {
         }
     } catch {}
 
-    # Source 3: 36Kr 快讯
+    # Source 3: 36Kr 快讯 (JSON API)
     try {
-        $krResp = Invoke-WebRequest -Uri "https://36kr.com/information/breakingnews/" `
-                    -UseBasicParsing -TimeoutSec 15 `
-                    -Headers @{ "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"; "Referer" = "https://36kr.com/" }
-        $titleMatches = [regex]::Matches($krResp.Content, '(?i)<h3[^>]*class="[^"]*article-item-title[^"]*"[^>]*>\s*([^<]{5,100})\s*</h3>')
-        if ($titleMatches.Count -eq 0) {
-            # Fallback: try <a> tags inside article items
-            $titleMatches = [regex]::Matches($krResp.Content, '(?i)data-event-action="[^"]*title[^"]*"[^>]*>\s*([^<]{5,100})\s*<')
-        }
-        foreach ($m in ($titleMatches | Select-Object -First 12)) {
-            $t = $m.Groups[1].Value.Trim() -replace '&[a-z]+;', ' '
-            if ($t.Length -gt 4) {
-                [void]$items.Add([PSCustomObject]@{ Title = $t; Source = "36Kr"; Score = Get-HeadlineScore $t })
+        $krResp = Invoke-Api -Uri "https://36kr.com/api/newsflash?per_page=12" -Referer "https://36kr.com/"
+        if ($krResp -and $krResp.data -and $krResp.data.items) {
+            foreach ($item in ($krResp.data.items | Select-Object -First 12)) {
+                $t = "$($item.title)" -replace '<[^>]+>', '' -replace '&[a-z]+;', ' '
+                if ($t.Trim().Length -gt 4) {
+                    [void]$items.Add([PSCustomObject]@{ Title = $t.Trim(); Source = "36Kr"; Score = Get-HeadlineScore $t })
+                }
             }
         }
     } catch {}
